@@ -1,0 +1,11 @@
+{
+    "typeAcquisition": {
+      "include": ["three", "howler", "peggy", "stats.js"]
+    },
+    "compilerOptions": {
+      "module": "commonjs",
+      "target": "esnext",
+      "checkJs": true
+    },
+    "include": ["public/js/*.js", "**/*.d.ts"]
+}

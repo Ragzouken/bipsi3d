@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>bipsi3d</title>
+
+  <script src="./library/three.min.js"></script>
+  <script src="./library/stats.min.js"></script>
+  <script src="./library/peggy.min.js"></script>
+
+  <script src="./js/blocks.js"></script>
+  <script src="./js/rendering.js"></script>
+
+  <script src="./js/start.js"></script>
+
+  <!-- inline bc i cant be fucked rn -->
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
+    main {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+
+      display: grid;
+    }
+
+    #room-render {
+      background: red;
+      overflow: hidden;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <section id="room-render"></section>
+  </main>
+</body>
+
+</html>
