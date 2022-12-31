@@ -1,3 +1,19 @@
+/**
+ *  how to transform uv coordinates for different members of D4 (rotation+flip of rect)
+ * 
+ *  0 = x
+ *  1 = y
+ *  2 = 1 - x
+ *  3 = 1 - y
+ */ 
+const D4Lookup = [
+    0, 1,   3, 0,   2, 3,   1, 2,
+    2, 1,   1, 0,   0, 3,   3, 2,
+];
+
+const cols = 8;
+const sw = 512;
+
 const tileDefines = `
 uniform float tileScale;
 uniform int[16] D4Lookup;
@@ -9,12 +25,12 @@ vec2 mapTile(vec2 uv, int tile, int orientation) {
     uv = vec2(components[xi], components[yi]);
     
     // half pixel correction
-    vec2 c = vec2(1.0 / 256.0);
+    vec2 c = vec2(1.0 / ${sw}.0);
     uv += c * .5;
     uv -= c * uv;
 
     float t = float(tile);
-    uv += vec2(mod(t, 16.0), floor(t / 16.0));
+    uv += vec2(mod(t, ${cols}.0), floor(t / ${cols}.0));
     uv *= tileScale;
 
     return uv;
@@ -76,7 +92,7 @@ const tileUVs = `
  */
 function blockShapeShaderFixer(shader) {
     shader.uniforms.frame = { value: 1 };
-    shader.uniforms.tileScale = { value: 1/16 };
+    shader.uniforms.tileScale = { value: 1/cols };
     shader.uniforms.S4Lookup = { value: S4Lookup };
     shader.uniforms.D4Lookup = { value: D4Lookup };
     shader.uniforms.blockDesigns = { value: undefined };
@@ -106,9 +122,9 @@ gl_Position = combined * mvPosition;
 /** 
  * @param {THREE.Shader} shader
  */
- function billboardShaderFixer(shader) {
+function billboardShaderFixer(shader) {
     this.uniforms = shader.uniforms;
-    shader.uniforms.tileScale = { value: 1/16 };
+    shader.uniforms.tileScale = { value: 1/cols };
     shader.uniforms.D4Lookup = { value: D4Lookup };
 
     shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
