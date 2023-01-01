@@ -348,11 +348,13 @@ class BlockMap extends THREE.Object3D {
     meshes = new Map();
 
     /**
-     * @param {Map<string, BlockShapeInstances>} renderers
+     * @param {{ [type: string]: THREE.BufferGeometry }} geometries
      */
-    constructor(renderers) {
+    constructor(geometries, material) {
         super();
 
+        const renderers = new Map(Object.entries(geometries).map(([key, geometry]) => [key, new BlockShapeInstances(geometry, material, 4096)]));
+        
         renderers.forEach((mesh, type) => {
             this.meshes.set(type, mesh);
             this.add(mesh);

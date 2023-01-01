@@ -1,11 +1,74 @@
 window.addEventListener("DOMContentLoaded", start);
 
+const designCount = 16;
+
+class RoomRendering extends THREE.Object3D {
+    /**
+     * @param {THREE.Texture} texture
+     */
+    constructor(texture) {
+        super();
+
+        this.timer = 0;
+        this.frame = 0;
+
+        const geometries = {
+            ramp: makeGeometry(ramp),
+            slab: makeGeometry(slab),
+            cube: makeGeometry(cube),
+            wedgeHead: makeGeometry(wedgeHead),
+            wedgeBody: makeGeometry(wedgeBody),
+        };
+
+        this.texture = texture;
+        this.tilesetWidth = 512;
+        this.tilesetCols = 8;
+
+        this.designs = new BlockDesignData(8, 4, designCount);
+        for (let i = 0; i < designCount; ++i) this.designs.setDesignAt(i, randomDesign(undefined, 0));
+
+        this.blockMaterial = new BlocksMaterial(this.texture, this.designs);
+        this.spriteMaterial = new SpritesMaterial(this.texture);
+
+        this.blockMap = new BlockMap(geometries, this.blockMaterial);
+        this.billboards = new BillboardInstances(new THREE.PlaneGeometry(1, 1), this.spriteMaterial, 4096);
+
+        this.add(this.blockMap);
+        this.add(this.billboards);
+
+        this.boundMin = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+        this.boundMax = new THREE.Vector3( Infinity,  Infinity,  Infinity);
+    }
+
+    update() {
+        if (this.blockMaterial.uniforms) {
+            this.blockMaterial.uniforms.tilesetWidth.value = this.tilesetWidth;
+            this.blockMaterial.uniforms.tilesetWidthInv.value = 1/this.tilesetWidth;
+            this.blockMaterial.uniforms.tilesetCols.value = this.tilesetCols;
+            this.blockMaterial.uniforms.tilesetColsInv.value = 1/this.tilesetCols;
+
+            this.blockMaterial.uniforms.frame.value = this.frame;
+            
+            this.blockMaterial.uniforms.boundMin.value.copy(this.boundMin);
+            this.blockMaterial.uniforms.boundMax.value.copy(this.boundMax);
+        }
+
+        // if (this.timer == 0) this.frame = (this.frame + 1) % 4;
+        this.timer = (this.timer + 1) % 20;
+        this.billboards.update();
+    }
+}
+
 async function start() {
     const stats = new Stats();
     document.body.appendChild(stats.dom);
 
     const renderer = new THREE.WebGLRenderer({ alpha: true });
     document.getElementById("room-render").appendChild(renderer.domElement);
+
+    // input
+    const held = {};
+    let pressed = {};
 
     // camera
     const scene = new THREE.Scene();
@@ -19,18 +82,6 @@ async function start() {
     controls.enablePan = false;
     controls.rotateSpeed = .5;
 
-    const geometries = {
-        ramp: makeGeometry(ramp),
-        slab: makeGeometry(slab),
-        cube: makeGeometry(cube),
-        wedgeHead: makeGeometry(wedgeHead),
-        wedgeBody: makeGeometry(wedgeBody),
-    };
-
-    // level
-    const level = new THREE.Object3D();
-    scene.add(level);
-
     // tileset & designs
     const tilesImage = await loadImage("./assets/level1.png");
     const tilesTex = new THREE.Texture(tilesImage);
@@ -39,34 +90,19 @@ async function start() {
     tilesTex.generateMipmaps = false;
     tilesTex.needsUpdate = true;
 
-    const designCount = 16;
-    const blockDesignData = new BlockDesignData(8, 4, designCount);
-    for (let i = 0; i < designCount; ++i) blockDesignData.setDesignAt(i, randomDesign(undefined, 0));
+    // level
+    const level = new RoomRendering(tilesTex);
+    scene.add(level);
 
-    const blockMaterial = new THREE.MeshBasicMaterial({ 
-        side: THREE.DoubleSide, 
-        alphaTest: .5, 
-        map: tilesTex,
-    });
-    blockMaterial.onBeforeCompile = function (shader) {
-        blockMaterial.uniforms = shader.uniforms;
-        blockShapeShaderFixer(shader);
-        shader.uniforms.blockDesigns.value = blockDesignData;
-    }
+    const max = 8;
+    const sub = 4;
 
-    const spriteMaterial = blockMaterial.clone();
-
-    const cubeCount = 4096;
-    const renderers = new Map(Object.entries(geometries).map(([key, geometry]) => [key, new BlockShapeInstances(geometry, blockMaterial, cubeCount)]));
-    const blockMap = new BlockMap(renderers);
-    const billboards = new BillboardInstances(new THREE.PlaneGeometry(1, 1), spriteMaterial, cubeCount);
-
-    level.add(blockMap);
-    level.add(billboards);
-
-    for (let z = 0; z < 15; ++z) {
-        for (let x = 0; x < 15; ++x) {
-            blockMap.setBlockAt(new THREE.Vector3(x-7, 0, z-7), "slab", THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, 15));
+    for (let z = 0; z < max; ++z) {
+        for (let y = 0; y < max; ++y) {
+            for (let x = 0; x < max; ++x) {
+                if (Math.random() < .4) continue;
+                level.blockMap.setBlockAt(new THREE.Vector3(x-sub, y-sub, z-sub), "slab", THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, designCount-1));
+            }
         }
     }
 
@@ -87,18 +123,22 @@ async function start() {
         camera.updateProjectionMatrix();
     }
 
-    let frame = 0;
-    let timer = 0;
+    level.boundMax.y = 4;
     function animate() {
-        if (blockMaterial.uniforms) blockMaterial.uniforms.frame.value = frame;
-        if (timer == 0) frame = (frame + 1) % 4;
-        timer = (timer + 1) % 20;
+        if (pressed["="]) {
+            level.boundMax.y += 1;
+        }
+        if (pressed["-"]) {
+            level.boundMax.y -= 1;
+        }
 
-        billboards.update();
+        level.update();
+        controls.update();
+
         renderer.render(scene, camera);
 
-        controls.update();
         stats.update();
+        pressed = {};
     };
 
     function update() {
@@ -108,4 +148,17 @@ async function start() {
     }
 
     update();
+
+    window.addEventListener("keydown", (event) => {
+        // if (isElementTextInput(event.target)) return;
+
+        held[event.key] = true;
+        pressed[event.key] = true;
+
+        if (event.key.includes("Arrow")) event.preventDefault();
+    });
+
+    window.addEventListener("keyup", (event) => {
+        held[event.key] = false;
+    });
 }

@@ -1,5 +1,40 @@
 "use strict";
 
+class BlocksMaterial extends THREE.MeshBasicMaterial {
+    /**
+     * @param {THREE.Texture} texture
+     * @param {BlockDesignData} designs
+     */
+    constructor(texture, designs) {
+        super({ 
+            side: THREE.DoubleSide, 
+            alphaTest: .5, 
+            map: texture,
+        });
+
+        this.onBeforeCompile = function (shader) {
+            this.uniforms = shader.uniforms;
+            blockShapeShaderFixer(shader);
+            shader.uniforms.blockDesigns.value = designs;
+        }
+    }
+}
+
+class SpritesMaterial extends THREE.MeshBasicMaterial {
+    /**
+     * @param {THREE.Texture} texture
+     */
+    constructor(texture) {
+        super({ 
+            side: THREE.DoubleSide, 
+            alphaTest: .5, 
+            map: texture,
+        });
+
+        this.onBeforeCompile = billboardShaderFixer;
+    }
+}
+
 // D4 = symmetry group for rotations+flips of a square
 
 /**
@@ -17,7 +52,12 @@ const cols = 8;
 const sw = 512;
 
 const tileDefines = `
-uniform float tileScale;
+uniform float tilesetWidth;
+uniform float tilesetWidthInv;
+
+uniform float tilesetCols;
+uniform float tilesetColsInv;
+
 uniform int[16] D4_UV_LOOKUP;
 
 vec2 mapTile(vec2 uv, int tile, int orientation) {
@@ -27,15 +67,23 @@ vec2 mapTile(vec2 uv, int tile, int orientation) {
     uv = vec2(components[xi], components[yi]);
     
     // half pixel correction
-    vec2 c = vec2(1.0 / ${sw}.0);
+    vec2 c = vec2(tilesetWidthInv);
     uv += c * .5;
     uv -= c * uv;
 
     float t = float(tile);
-    uv += vec2(mod(t, ${cols}.0), floor(t / ${cols}.0));
-    uv *= tileScale;
+    uv += vec2(mod(t, tilesetCols), floor(t * tilesetColsInv));
+    uv *= tilesetColsInv;
 
     return uv;
+}
+
+uniform vec3 boundMin;
+uniform vec3 boundMax;
+
+float insideBox3D(vec3 v, vec3 bottomLeft, vec3 topRight) {
+    vec3 s = step(bottomLeft, v) - step(topRight, v);
+    return s.x * s.y * s.z; 
 }
 `;
 
@@ -99,6 +147,14 @@ function blockShapeShaderFixer(shader) {
     shader.uniforms.D4_UV_LOOKUP = { value: D4_UV_LOOKUP };
     shader.uniforms.blockDesigns = { value: undefined };
 
+    shader.uniforms.tilesetWidth = { value: 32 };
+    shader.uniforms.tilesetWidthInv = { value: 1/32 };
+    shader.uniforms.tilesetCols = { value: 4 };
+    shader.uniforms.tilesetColsInv = { value: 1/4 };
+
+    shader.uniforms.boundMin = { value: new THREE.Vector3(-100, -100, -100) };
+    shader.uniforms.boundMax = { value: new THREE.Vector3(100, 100, 100) };
+
     shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
 ` + blockTileDefines);
     shader.vertexShader = shader.vertexShader.replace("#include <uv_vertex>", tileUVs);
@@ -114,7 +170,11 @@ mvPosition.xyz -= normal * clamp(offset, 0.0, 1.0) * 0.001;
 
 gl_Position = combined * mvPosition;
 
+// cull out of bounds
+gl_Position.x *= insideBox3D(instanceOrientation.xyz, boundMin, boundMax);
+
 #ifdef USE_UV
+    // don't render tile 0
     if (tile.x == 0.0) gl_Position = vec4(0.0);
 #endif
         `.trim(),
@@ -128,6 +188,8 @@ function billboardShaderFixer(shader) {
     this.uniforms = shader.uniforms;
     shader.uniforms.tileScale = { value: 1/cols };
     shader.uniforms.D4_UV_LOOKUP = { value: D4_UV_LOOKUP };
+
+    shader.uniforms.tilesetWidthInv = { value: 1/512 };
 
     shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
 ` + quadTileDefines);
@@ -469,9 +531,6 @@ class BillboardInstances extends THREE.InstancedMesh {
      * @param {number} count
      */
     constructor(geometry, material, count) {
-        material = material.clone();
-        material.onBeforeCompile = billboardShaderFixer;
-
         super(geometry.clone(), material, count);
         this.count = 0;
 
