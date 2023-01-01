@@ -66,7 +66,7 @@ async function start() {
 
     for (let z = 0; z < 15; ++z) {
         for (let x = 0; x < 15; ++x) {
-            blockMap.setBlockAt(new THREE.Vector3(x-7, 0, z-7), "cube", 0, THREE.MathUtils.randInt(0, 15));
+            blockMap.setBlockAt(new THREE.Vector3(x-7, 0, z-7), "slab", THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, 15));
         }
     }
 

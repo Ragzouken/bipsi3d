@@ -11,7 +11,7 @@ const orthoOrients = [];
 orthoOrients.length = 6;
 
 /** @type {THREE.Matrix3[]} */
-const S4Lookup = [];
+const S4_TRANSFORM_LOOKUP = [];
 
 /** @type {THREE.Quaternion[]} */
 const S4Quats = [];
@@ -21,7 +21,7 @@ orthoNormals.forEach((up, i) => {
         if (Math.abs(up.dot(forward)) > .1) return;
         const left = up.clone().cross(forward);
         const matrix = new THREE.Matrix4().makeBasis(left, up, forward);
-        S4Lookup.push(new THREE.Matrix3().setFromMatrix4(matrix));
+        S4_TRANSFORM_LOOKUP.push(new THREE.Matrix3().setFromMatrix4(matrix));
 
         const q = new THREE.Quaternion().setFromRotationMatrix(matrix).normalize();
         S4Quats.push(q);

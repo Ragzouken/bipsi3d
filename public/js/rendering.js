@@ -1,27 +1,29 @@
+"use strict";
+
+// D4 = symmetry group for rotations+flips of a square
+
 /**
- *  how to transform uv coordinates for different members of D4 (rotation+flip of rect)
- * 
- *  0 = x
- *  1 = y
- *  2 = 1 - x
- *  3 = 1 - y
- */ 
-const D4Lookup = [
-    0, 1,   3, 0,   2, 3,   1, 2,
-    2, 1,   1, 0,   0, 3,   3, 2,
-];
+ *  how to transform uv coordinates for different members of D4
+ */
+const D4_UV_LOOKUP = (function() {
+    const [X, Y, XINV, YINV] = [0, 1, 2, 3];
+    return Object.freeze([
+        [   X,    Y], [YINV,    X], [XINV, YINV], [   Y, XINV],
+        [XINV,    Y], [   Y,    X], [   X, YINV], [YINV, XINV],
+    ].flat(1));
+})();
 
 const cols = 8;
 const sw = 512;
 
 const tileDefines = `
 uniform float tileScale;
-uniform int[16] D4Lookup;
+uniform int[16] D4_UV_LOOKUP;
 
 vec2 mapTile(vec2 uv, int tile, int orientation) {
     vec4 components = vec4(uv.x, uv.y, 1.0 - uv.x, 1.0 - uv.y);
-    int xi = D4Lookup[orientation * 2 + 0];
-    int yi = D4Lookup[orientation * 2 + 1];
+    int xi = D4_UV_LOOKUP[orientation * 2 + 0];
+    int yi = D4_UV_LOOKUP[orientation * 2 + 1];
     uv = vec2(components[xi], components[yi]);
     
     // half pixel correction
@@ -38,11 +40,11 @@ vec2 mapTile(vec2 uv, int tile, int orientation) {
 `;
 
 const cubeDefines = `
-uniform mat3[24] S4Lookup;
+uniform mat3[24] S4_TRANSFORM_LOOKUP;
 
 mat4 mapCube(vec3 position, int orientation) {
     mat4 matrix = mat4(1.0);
-    mat3 rotation = S4Lookup[orientation];
+    mat3 rotation = S4_TRANSFORM_LOOKUP[orientation];
     matrix[0].xyz = rotation[0];
     matrix[1].xyz = rotation[1];
     matrix[2].xyz = rotation[2];
@@ -93,8 +95,8 @@ const tileUVs = `
 function blockShapeShaderFixer(shader) {
     shader.uniforms.frame = { value: 1 };
     shader.uniforms.tileScale = { value: 1/cols };
-    shader.uniforms.S4Lookup = { value: S4Lookup };
-    shader.uniforms.D4Lookup = { value: D4Lookup };
+    shader.uniforms.S4_TRANSFORM_LOOKUP = { value: S4_TRANSFORM_LOOKUP };
+    shader.uniforms.D4_UV_LOOKUP = { value: D4_UV_LOOKUP };
     shader.uniforms.blockDesigns = { value: undefined };
 
     shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
@@ -125,7 +127,7 @@ gl_Position = combined * mvPosition;
 function billboardShaderFixer(shader) {
     this.uniforms = shader.uniforms;
     shader.uniforms.tileScale = { value: 1/cols };
-    shader.uniforms.D4Lookup = { value: D4Lookup };
+    shader.uniforms.D4_UV_LOOKUP = { value: D4_UV_LOOKUP };
 
     shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
 ` + quadTileDefines);
@@ -320,7 +322,7 @@ class BlockShapeInstances extends THREE.InstancedMesh {
 
         _orientation.fromBufferAttribute(this.orientation, index);
         target.identity();
-        target.setFromMatrix3(S4Lookup[_orientation.w]);
+        target.setFromMatrix3(S4_TRANSFORM_LOOKUP[_orientation.w]);
         target.setPosition(_orientation.x, _orientation.y, _orientation.z);
     }
 

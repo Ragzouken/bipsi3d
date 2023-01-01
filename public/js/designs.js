@@ -1,7 +1,7 @@
 function randomDesign(tile = undefined, rot = undefined) {
     const design = [];
 
-    tile = tile ?? THREE.MathUtils.randInt(0, 16);
+    tile = tile ?? THREE.MathUtils.randInt(0, 15);
     rot = rot ?? THREE.MathUtils.randInt(0, 7);
 
     for (let f = 0; f < 4; ++f) {
