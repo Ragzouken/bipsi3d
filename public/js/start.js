@@ -67,13 +67,16 @@ async function start() {
     document.getElementById("room-render").appendChild(renderer.domElement);
 
     // input
-    const held = {};
+    let held = {};
     let pressed = {};
 
     // camera
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, 1 / 1, 0.1, 1000);
     camera.position.setZ(5);
+
+    const cameraFocus = new THREE.Object3D();
+    cameraFocus.add(camera);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.mouseButtons.LEFT = -1;
@@ -94,14 +97,20 @@ async function start() {
     const level = new RoomRendering(tilesTex);
     scene.add(level);
 
+    const grid = new THREE.GridHelper(10, 10);
+    grid.geometry.translate(-.5, -.5, -.5);
+    scene.add(grid);
+
     const max = 8;
     const sub = 4;
+
+    const types = [...level.blockMap.meshes.keys()];
 
     for (let z = 0; z < max; ++z) {
         for (let y = 0; y < max; ++y) {
             for (let x = 0; x < max; ++x) {
                 if (Math.random() < .4) continue;
-                level.blockMap.setBlockAt(new THREE.Vector3(x-sub, y-sub, z-sub), "slab", THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, designCount-1));
+                level.blockMap.setBlockAt(new THREE.Vector3(x-sub, y-sub, z-sub), types[THREE.MathUtils.randInt(0, types.length-1)], THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, designCount-1));
             }
         }
     }
@@ -116,34 +125,52 @@ async function start() {
         const h = renderer.domElement.parentElement.clientHeight;
         renderer.setSize(w, h);
 
-        renderer.setClearColor(new THREE.Color(0, 255, 0));
-        renderer.clear();
-
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
     }
 
+    const up = new THREE.Vector3(0, 1, 0);
+
     level.boundMax.y = 4;
-    function animate() {
-        if (pressed["="]) {
-            level.boundMax.y += 1;
+    function animate(dt) {
+        if (held["="]) {
+            cameraFocus.position.y += 2 * dt;
         }
-        if (pressed["-"]) {
-            level.boundMax.y -= 1;
+        if (held["-"]) {
+            cameraFocus.position.y -= 2 * dt;
         }
 
-        level.update();
+        cameraFocus.updateMatrixWorld();
+        controls.target.copy(cameraFocus.position);
+
         controls.update();
 
+        const forward = camera.getWorldDirection(new THREE.Vector3());
+        const above = up.dot(forward) < 0;
+
+        level.boundMin.y = !above ? cameraFocus.position.y   : -Infinity;
+        level.boundMax.y =  above ? cameraFocus.position.y+1 :  Infinity;
+        grid.position.copy(cameraFocus.position);
+
+        grid.position.y = above ? Math.floor(grid.position.y) : Math.ceil(grid.position.y + 1);
+
+        level.update();
         renderer.render(scene, camera);
 
         stats.update();
         pressed = {};
     };
 
-    function update() {
+    let prev;
+    function update(timestamp) {
         resize();
-        animate();
+
+        const dt = Math.min((timestamp - (prev ?? timestamp)) / 1000, 1/15);
+        prev = timestamp;
+        resize();
+
+        animate(dt);
+
         requestAnimationFrame(update);
     }
 
@@ -160,5 +187,9 @@ async function start() {
 
     window.addEventListener("keyup", (event) => {
         held[event.key] = false;
+    });
+
+    window.addEventListener("blur", (event) => {
+        held = {};
     });
 }
