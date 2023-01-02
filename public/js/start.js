@@ -130,15 +130,20 @@ async function start() {
     }
 
     const up = new THREE.Vector3(0, 1, 0);
+    const focusTarget = new THREE.Vector3(0, 0, 0);
+    focusTarget.copy(cameraFocus.position);
 
     level.boundMax.y = 4;
     function animate(dt) {
-        if (held["="]) {
-            cameraFocus.position.y += 2 * dt;
+        if (pressed["="]) {
+            focusTarget.y += 1;
         }
-        if (held["-"]) {
-            cameraFocus.position.y -= 2 * dt;
+        if (pressed["-"]) {
+            focusTarget.y -= 1;
         }
+
+        const delta = focusTarget.clone().sub(cameraFocus.position);
+        cameraFocus.position.add(delta.multiplyScalar(.25+dt));
 
         cameraFocus.updateMatrixWorld();
         controls.target.copy(cameraFocus.position);
@@ -148,11 +153,11 @@ async function start() {
         const forward = camera.getWorldDirection(new THREE.Vector3());
         const above = up.dot(forward) < 0;
 
-        level.boundMin.y = !above ? cameraFocus.position.y   : -Infinity;
-        level.boundMax.y =  above ? cameraFocus.position.y+1 :  Infinity;
+        level.boundMin.y = !above ? Math.floor(cameraFocus.position.y)   : -Infinity;
+        level.boundMax.y =  above ? Math.floor(cameraFocus.position.y)+1 :  Infinity;
         grid.position.copy(cameraFocus.position);
 
-        grid.position.y = above ? Math.floor(grid.position.y) : Math.ceil(grid.position.y + 1);
+        grid.position.y = Math.floor(above ? level.boundMax.y-1 : level.boundMin.y+1);
 
         level.update();
         renderer.render(scene, camera);
@@ -174,7 +179,7 @@ async function start() {
         requestAnimationFrame(update);
     }
 
-    update();
+    requestAnimationFrame(update);
 
     window.addEventListener("keydown", (event) => {
         // if (isElementTextInput(event.target)) return;
