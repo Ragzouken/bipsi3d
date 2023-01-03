@@ -109,7 +109,7 @@ async function start() {
     for (let z = 0; z < max; ++z) {
         for (let y = 0; y < max; ++y) {
             for (let x = 0; x < max; ++x) {
-                if (Math.random() < .4) continue;
+                if (Math.random() < y/8) continue;
                 level.blockMap.setBlockAt(new THREE.Vector3(x-sub, y-sub, z-sub), types[THREE.MathUtils.randInt(0, types.length-1)], THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, designCount-1));
             }
         }
@@ -120,17 +120,25 @@ async function start() {
 
     //
 
+    const shadow = new THREE.WebGLRenderTarget(1, 1);
+    const shadowMaterial = new THREE.MeshBasicMaterial({ map: shadow.texture, opacity: .1, transparent: true, color: 0x00000 });
+
+    const compCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const compGeometry = new THREE.PlaneGeometry(2, 2);
+    const compMesh = new THREE.Mesh(compGeometry, shadowMaterial);
+
     function resize() {
         const w = renderer.domElement.parentElement.clientWidth;
         const h = renderer.domElement.parentElement.clientHeight;
         renderer.setSize(w, h);
+        shadow.setSize(w, h);
 
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
     }
 
     const up = new THREE.Vector3(0, 1, 0);
-    const focusTarget = new THREE.Vector3(0, 0, 0);
+    const focusTarget = new THREE.Vector3(0, 0.5, 0);
     focusTarget.copy(cameraFocus.position);
 
     level.boundMax.y = 4;
@@ -153,14 +161,30 @@ async function start() {
         const forward = camera.getWorldDirection(new THREE.Vector3());
         const above = up.dot(forward) < 0;
 
-        level.boundMin.y = !above ? Math.floor(cameraFocus.position.y)   : -Infinity;
-        level.boundMax.y =  above ? Math.floor(cameraFocus.position.y)+1 :  Infinity;
-        grid.position.copy(cameraFocus.position);
 
-        grid.position.y = Math.floor(above ? level.boundMax.y-1 : level.boundMin.y+1);
 
-        level.update();
+        function clip(above, inclusive=true) {
+            const adjust = inclusive ? 0 : 1;
+            level.boundMin.y = !above ? Math.floor(focusTarget.y)   + adjust : -Infinity;
+            level.boundMax.y =  above ? Math.floor(focusTarget.y)+1 - adjust :  Infinity;
+            level.update();
+            
+            grid.position.copy(focusTarget);
+            grid.position.y = Math.floor(above ? level.boundMax.y-1 : level.boundMin.y+1);
+        }
+
+        renderer.autoClear = false;
+
+        clip(!above, false);
+        renderer.setRenderTarget(shadow);
+        renderer.clear(true, true, true);
+        renderer.render(level, camera);
+
+        clip(above);
+        renderer.setRenderTarget(null);
+        renderer.clear(true, true, true);
         renderer.render(scene, camera);
+        renderer.render(compMesh, compCamera);
 
         stats.update();
         pressed = {};

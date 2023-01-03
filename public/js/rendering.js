@@ -170,8 +170,9 @@ mvPosition.xyz -= normal * clamp(offset, 0.0, 1.0) * 0.001;
 
 gl_Position = combined * mvPosition;
 
-// cull out of bounds
-gl_Position.x *= insideBox3D(instanceOrientation.xyz, boundMin, boundMax);
+// culling
+float inside = insideBox3D(instanceOrientation.xyz, boundMin, boundMax);
+gl_Position *= vec4(inside);
 
 #ifdef USE_UV
     // don't render tile 0
