@@ -356,6 +356,7 @@ class BlockMap extends THREE.Object3D {
         const renderers = new Map(Object.entries(geometries).map(([key, geometry]) => [key, new BlockShapeInstances(geometry, material, 4096)]));
         
         renderers.forEach((mesh, type) => {
+            mesh.name = `Instanced Blocks (${type})`;
             this.meshes.set(type, mesh);
             this.add(mesh);
         });
