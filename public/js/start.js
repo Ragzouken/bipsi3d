@@ -128,7 +128,7 @@ async function start() {
 
     const grid = new THREE.GridHelper(10, 10);
     grid.name = "Edit Plane";
-    grid.geometry.translate(-.5, -.5, -.5);
+    grid.geometry.translate(-.5, 0, -.5);
     scene.add(grid);
 
     const max = 8;
@@ -136,14 +136,14 @@ async function start() {
 
     const types = [...level.blockMap.meshes.keys()];
 
-    for (let z = 0; z < max; ++z) {
-        for (let y = 0; y < max; ++y) {
-            for (let x = 0; x < max; ++x) {
-                if (Math.random() < y/8) continue;
-                level.blockMap.setBlockAt(new THREE.Vector3(x-sub, y-sub, z-sub), types[THREE.MathUtils.randInt(0, types.length-1)], THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, designCount-1));
-            }
-        }
-    }
+    // for (let z = 0; z < max; ++z) {
+    //     for (let y = 0; y < max; ++y) {
+    //         for (let x = 0; x < max; ++x) {
+    //             if (Math.random() < y/8) continue;
+    //             level.blockMap.setBlockAt(new THREE.Vector3(x-sub, y-sub, z-sub), types[THREE.MathUtils.randInt(0, types.length-1)], THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, designCount-1));
+    //         }
+    //     }
+    // }
 
     camera.position.set(2, 2, 2);
     camera.lookAt(new THREE.Vector3(0, 0, 0));
@@ -181,9 +181,6 @@ async function start() {
 
     level.boundMax.y = 4;
     function animate(dt) {
-        const norm = getNormalisePointer();
-        raycaster.setFromCamera(norm, camera);
-        const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
         // const [first] = raycaster.intersectObjects([grid], true);
 
         // if (first) {
@@ -191,15 +188,6 @@ async function start() {
         //     console.log(point);
         //     cube.position.copy(first.point);
         // }
-
-        if (point) {
-            point.round();
-            cube.position.copy(point);
-
-            if (held["MouseLeft"]) {
-                level.blockMap.delBlockAt(cube.position);
-            }
-        }
 
         if (pressed["="]) {
             focusTarget.y += 1;
@@ -226,11 +214,7 @@ async function start() {
             level.update();
             
             grid.position.copy(focusTarget);
-            grid.position.y = Math.floor(above ? level.boundMax.y-1 : level.boundMin.y+1);
-
-            if (inclusive) {
-                plane.setFromNormalAndCoplanarPoint(plane.normal, grid.position);
-            }
+            grid.position.y = focusTarget.y + (above ? -.5 : .5);
         }
 
         renderer.autoClear = false;
@@ -245,6 +229,21 @@ async function start() {
         renderer.clear(true, true, true);
         renderer.render(scene, camera);
         renderer.render(compMesh, compCamera);
+
+        plane.setFromNormalAndCoplanarPoint(plane.normal, grid.position);
+        const norm = getNormalisePointer();
+        raycaster.setFromCamera(norm, camera);
+        const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+
+        if (point) {
+            cube.position.copy(point);
+            cube.position.y += above ? .5 : -.5;
+            cube.position.round();
+
+            if (held["MouseLeft"]) {
+                level.blockMap.setBlockAt(cube.position, "cube", 0, 0);
+            }
+        }
 
         stats.update();
         pressed = {};
