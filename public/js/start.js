@@ -22,10 +22,12 @@ class RoomRendering extends THREE.Object3D {
 
         this.texture = texture;
         this.tilesetWidth = 512;
-        this.tilesetCols = 8;
+        this.tilesetCols = 16;
 
         this.designs = new BlockDesignData(8, 4, designCount);
         for (let i = 0; i < designCount; ++i) this.designs.setDesignAt(i, randomDesign(undefined, 0));
+
+        this.designs.setDesignAt(0, boxDesign(1, 2));
 
         this.blockMaterial = new BlocksMaterial(this.texture, this.designs);
         this.spriteMaterial = new SpritesMaterial(this.texture);
@@ -53,7 +55,7 @@ class RoomRendering extends THREE.Object3D {
             this.blockMaterial.uniforms.boundMax.value.copy(this.boundMax);
         }
 
-        // if (this.timer == 0) this.frame = (this.frame + 1) % 4;
+        if (this.timer == 0) this.frame = (this.frame + 1) % 4;
         this.timer = (this.timer + 1) % 20;
         this.billboards.update();
     }
@@ -65,6 +67,12 @@ async function start() {
 
     const renderer = new THREE.WebGLRenderer({ alpha: true });
     document.getElementById("room-render").appendChild(renderer.domElement);
+
+    //
+
+    const editState = {
+        layerMode: false,
+    };
 
     // input
     let held = {};
@@ -89,7 +97,9 @@ async function start() {
     }
 
     window.addEventListener("pointerdown", (event) => {
-        held[mouseButtons[event.button] ?? "MouseUnknown"] = true;
+        const button = mouseButtons[event.button] ?? "MouseUnknown";
+        pressed[button] = true;
+        held[button] = true;
     });
 
     window.addEventListener("pointerup", (event) => {
@@ -126,7 +136,7 @@ async function start() {
     const level = new RoomRendering(tilesTex);
     scene.add(level);
 
-    const grid = new THREE.GridHelper(10, 10);
+    const grid = new GridHelper(16, 16);
     grid.name = "Edit Plane";
     grid.geometry.translate(-.5, 0, -.5);
     scene.add(grid);
@@ -195,6 +205,9 @@ async function start() {
         if (pressed["-"]) {
             focusTarget.y -= 1;
         }
+        if (pressed["l"]) {
+            editState.layerMode = !editState.layerMode;
+        }
 
         const delta = focusTarget.clone().sub(cameraFocus.position);
         cameraFocus.position.add(delta.multiplyScalar(.25+dt));
@@ -208,21 +221,29 @@ async function start() {
         const above = up.dot(forward) < 0;
 
         function clip(above, inclusive=true) {
-            const adjust = inclusive ? 0 : 1;
-            level.boundMin.y = !above ? Math.floor(focusTarget.y)   + adjust : -Infinity;
-            level.boundMax.y =  above ? Math.floor(focusTarget.y)+1 - adjust :  Infinity;
+            if (editState.layerMode) {
+                const adjust = inclusive ? 0 : 1;
+                level.boundMin.y = !above ? Math.floor(focusTarget.y)   + adjust : -Infinity;
+                level.boundMax.y =  above ? Math.floor(focusTarget.y)+1 - adjust :  Infinity;
+            } else {
+                level.boundMin.y = -Infinity;
+                level.boundMax.y =  Infinity;
+            }
             level.update();
-            
-            grid.position.copy(focusTarget);
+        
+            grid.visible = editState.layerMode;
+            // grid.position.copy(focusTarget);
             grid.position.y = focusTarget.y + (above ? -.5 : .5);
         }
 
         renderer.autoClear = false;
 
-        clip(!above, false);
-        renderer.setRenderTarget(shadow);
-        renderer.clear(true, true, true);
-        renderer.render(level, camera);
+        if (editState.layerMode) {
+            clip(!above, false);
+            renderer.setRenderTarget(shadow);
+            renderer.clear(true, true, true);
+            renderer.render(level, camera);
+        }
 
         clip(above);
         renderer.setRenderTarget(null);
@@ -230,19 +251,29 @@ async function start() {
         renderer.render(scene, camera);
         renderer.render(compMesh, compCamera);
 
-        plane.setFromNormalAndCoplanarPoint(plane.normal, grid.position);
-        const norm = getNormalisePointer();
-        raycaster.setFromCamera(norm, camera);
-        const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+        compMesh.visible = editState.layerMode;
 
-        if (point) {
-            cube.position.copy(point);
-            cube.position.y += above ? .5 : -.5;
-            cube.position.round();
+        if (editState.layerMode) {
+            plane.setFromNormalAndCoplanarPoint(plane.normal, grid.position);
+            const norm = getNormalisePointer();
+            raycaster.setFromCamera(norm, camera);
+            const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
 
-            if (held["MouseLeft"]) {
-                level.blockMap.setBlockAt(cube.position, "cube", 0, 0);
+            if (point && point.distanceTo(grid.position) < 20) {
+                cube.visible = true;
+                cube.position.copy(point);
+                cube.position.y += above ? .5 : -.5;
+                cube.position.round();
+            } else {
+                cube.visible = false;
             }
+        }
+
+        if (cube.visible && pressed["MouseLeft"]) {
+            level.blockMap.setBlockAt(cube.position, "cube", 0, 0);
+            // focusTarget.copy(cube.position);
+            grid.position.x = cube.position.x;
+            grid.position.z = cube.position.z;
         }
 
         stats.update();
@@ -280,4 +311,50 @@ async function start() {
     window.addEventListener("blur", (event) => {
         held = {};
     });
+}
+
+class GridHelper extends THREE.LineSegments {
+	constructor(size = 10, divisions = 10, color1 = new THREE.Color(0xFFFFFF)) {
+		const halfSize = size / 2;
+
+		const vertices = [];
+        const colors = [];
+        const index = [];
+
+        for (let z = 0; z < divisions; ++z) {
+            for (let x = 0; x < divisions; ++x) {
+                const dx = Math.abs(x - halfSize);
+                const dz = Math.abs(z - halfSize);
+                const d = Math.sqrt(dx*dx + dz*dz);
+
+                vertices.push(x - halfSize, 0, z - halfSize);
+                colors.push(color1.r, color1.g, color1.b, 1 - Math.min(1, d / (halfSize - 1)));
+
+                if (z > 0) {
+                    index.push((z - 1) * divisions + x - 1, (z * divisions) + x);
+                }
+                
+                if (x > 0) {
+                    index.push(z * divisions + x - 1, (z * divisions) + x);
+                }
+            }
+        }
+
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+		geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+        geometry.setIndex(index);
+
+		const material = new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false, transparent: true });
+
+		super(geometry, material);
+
+		this.type = 'GridHelper';
+
+	}
+
+	dispose() {
+		this.geometry.dispose();
+		this.material.dispose();
+	}
 }
