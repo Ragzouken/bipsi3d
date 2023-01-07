@@ -64,6 +64,7 @@ class RoomRendering extends THREE.Object3D {
 }
 
 async function start() {
+    const clock = new THREE.Clock();
     const stats = new Stats();
     document.body.appendChild(stats.dom);
 
@@ -133,13 +134,23 @@ async function start() {
     controls.enablePan = false;
     controls.rotateSpeed = .5;
 
+    // const controls = new FlyControls(camera, renderer.domElement);
+    // controls.dragToLook = true;
+
+    function makeTexture(image) {
+        const texture = new THREE.Texture(image);
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.needsUpdate = true;
+        return texture;
+    }
+
     // tileset & designs
+    const cursorImage = await loadImage("./assets/cursor.png");
+    const cursorTex = makeTexture(cursorImage);
     const tilesImage = await loadImage("./assets/level1.png");
-    const tilesTex = new THREE.Texture(tilesImage);
-    tilesTex.magFilter = THREE.NearestFilter;
-    tilesTex.minFilter = THREE.NearestFilter;
-    tilesTex.generateMipmaps = false;
-    tilesTex.needsUpdate = true;
+    const tilesTex = makeTexture(tilesImage);
 
     // level
     const level = new RoomRendering(tilesTex);
@@ -187,7 +198,7 @@ async function start() {
     }
 
     const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-    const cubeMat = new THREE.MeshBasicMaterial();
+    const cubeMat = new THREE.MeshBasicMaterial({ map: cursorTex, alphaTest: .5, side: THREE.DoubleSide });
     const cube = new THREE.Mesh(cubeGeo, cubeMat);
     cube.scale.multiplyScalar(1.01);
 
@@ -201,14 +212,6 @@ async function start() {
 
     level.bounds.max.y = 4;
     function animate(dt) {
-        // const [first] = raycaster.intersectObjects([grid], true);
-
-        // if (first) {
-        //     //first.point.round();
-        //     console.log(point);
-        //     cube.position.copy(first.point);
-        // }
-
         if (pressed["="]) {
             focusTarget.y += 1;
         }
@@ -223,9 +226,9 @@ async function start() {
         cameraFocus.position.add(delta.multiplyScalar(.25+dt));
 
         cameraFocus.updateMatrixWorld();
-        controls.target.copy(cameraFocus.position);
+        //controls.target.copy(cameraFocus.position);
 
-        controls.update();
+        controls.update(dt);
 
         const forward = camera.getWorldDirection(new THREE.Vector3());
         const above = up.dot(forward) < 0;
@@ -326,16 +329,9 @@ async function start() {
         pressed = {};
     };
 
-    let prev;
-    function update(timestamp) {
+    function update() {
         resize();
-
-        const dt = Math.min((timestamp - (prev ?? timestamp)) / 1000, 1/15);
-        prev = timestamp;
-        resize();
-
-        animate(dt);
-
+        animate(Math.min(1/15, clock.getDelta()));
         requestAnimationFrame(update);
     }
 
@@ -360,7 +356,7 @@ async function start() {
 }
 
 class GridHelper extends THREE.LineSegments {
-	constructor(size = 10, divisions = 10, color1 = new THREE.Color(0xFFFFFF)) {
+	constructor(size = 10, divisions = 10, color1 = new THREE.Color("black")) {
 		const halfSize = size / 2;
 
 		const vertices = [];

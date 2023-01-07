@@ -183,8 +183,6 @@ gl_Position *= vec4(inside);
 #endif
         `.trim(),
     );
-
-    console.log(shader.vertexShader);
 };
 
 /** 
