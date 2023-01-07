@@ -40,11 +40,32 @@
       background: pink;
       overflow: hidden;
     }
+
+    #info {
+      position: absolute;
+      top: 0;
+      right: 0;
+      margin: 32px;
+      background: black;
+      color: white;
+      padding: 16px;
+      padding-right: 32px;
+      font-family: monospace;
+      font-size: 16px;
+    }
   </style>
 </head>
 
 <body>
   <main>
+    <div id="info">
+      <ul>
+        <li>place cube: left click</li>
+        <li>orbit camera: right-click + drag</li>
+        <li>toggle layer mode: l</li>
+        <li>up/down layer: + / -</li>
+      </ul>
+    </div>
     <section id="room-render"></section>
   </main>
 </body>

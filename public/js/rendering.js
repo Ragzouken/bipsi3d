@@ -299,6 +299,8 @@ class BlockShapeInstances extends THREE.InstancedMesh {
     static _matrix = new THREE.Matrix4();
     static _orientation = new THREE.Vector4();
     static _mesh = new THREE.Mesh();
+
+    /** @type {THREE.Intersection[]} */
     static _intersects = [];
 
     /**
@@ -408,6 +410,7 @@ class BlockShapeInstances extends THREE.InstancedMesh {
     /**
      * @param {number} index
      * @param {THREE.Vector3} target
+     * @returns {THREE.Vector3}
      */
     getPositionAt(index, target) {
         target.fromBufferAttribute(this.orientation, index);

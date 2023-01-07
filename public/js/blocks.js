@@ -423,4 +423,34 @@ class BlockMap extends THREE.Object3D {
     getTrianglesInBounds(bounds, target) {
         this.meshes.forEach((mesh) => mesh.getTrianglesInBounds(bounds, target));
     }
+
+    /**
+     * @param {THREE.Raycaster} raycaster
+     * @param {THREE.Box3} bounds
+     */
+    raycastBlocks(raycaster, bounds=undefined) {
+        const intersects = raycaster.intersectObject(this, true);
+
+        for (let intersect of intersects) {
+            const renderer = /** @type {BlockShapeInstances} */ (intersect.object);
+            const position = new THREE.Vector3();
+            const normal = new THREE.Vector3();
+
+            renderer.getPositionAt(intersect.instanceId, position);
+            
+            if (bounds && !bounds.containsPoint(position)) continue;
+
+            const normalMatrix = new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld);
+            normal.fromBufferAttribute(renderer.geometry.getAttribute("normal"), intersect.face.a);
+            normal.applyNormalMatrix(normalMatrix);
+
+            //const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(first.) < 0.1);
+
+            return {
+                intersection: intersect,
+                position,    
+                normal,            
+            }
+        }
+    }
 }
