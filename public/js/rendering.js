@@ -1,6 +1,6 @@
 "use strict";
 
-class BlocksMaterial extends THREE.MeshBasicMaterial {
+class BlocksMaterial extends THREE.MeshPhongMaterial {
     /**
      * @param {THREE.Texture} texture
      * @param {BlockDesignData} designs
@@ -10,6 +10,7 @@ class BlocksMaterial extends THREE.MeshBasicMaterial {
             side: THREE.DoubleSide, 
             alphaTest: .5, 
             map: texture,
+            fog: true,
         });
 
         this.onBeforeCompile = function (shader) {
@@ -29,6 +30,7 @@ class SpritesMaterial extends THREE.MeshBasicMaterial {
             side: THREE.DoubleSide, 
             alphaTest: .5, 
             map: texture,
+            fog: true,
         });
 
         this.onBeforeCompile = billboardShaderFixer;
@@ -168,7 +170,8 @@ vec3 norm = transformDirection(normal, combined);
 float offset = dot(norm, vec3(0.0, 0.0, 1.0));
 mvPosition.xyz -= normal * clamp(offset, 0.0, 1.0) * 0.001;
 
-gl_Position = combined * mvPosition;
+mvPosition = modelViewMatrix * blockMatrix * mvPosition;
+gl_Position = projectionMatrix * mvPosition;
 
 // culling
 float inside = insideBox3D(instanceOrientation.xyz, boundMin, boundMax);
@@ -180,6 +183,8 @@ gl_Position *= vec4(inside);
 #endif
         `.trim(),
     );
+
+    console.log(shader.vertexShader);
 };
 
 /** 

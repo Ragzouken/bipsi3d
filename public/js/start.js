@@ -114,6 +114,13 @@ async function start() {
 
     // camera
     const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog("pink", 8, 24);
+    const ambient = new THREE.AmbientLight( 0xffffff, 0.5 );
+    const directionalLight = new THREE.DirectionalLight( 0xffffff, 0.75 );
+    scene.add(ambient);
+    scene.add( directionalLight );
+    directionalLight.position.set(1, 2, 1);
+
     const camera = new THREE.PerspectiveCamera(75, 1 / 1, 0.1, 1000);
     camera.position.setZ(5);
 
@@ -267,8 +274,13 @@ async function start() {
         grid.visible = false;
 
         if (editState.layerMode) {
-            bounds.min.y = grid.position.y + 0;
-            bounds.max.y = grid.position.y + 1;
+            if (above) {
+                bounds.min.y = grid.position.y + 0;
+                bounds.max.y = grid.position.y + 1;
+            } else {
+                bounds.min.y = grid.position.y - 1;
+                bounds.max.y = grid.position.y + 0;
+            }
 
             plane.setFromNormalAndCoplanarPoint(plane.normal, grid.position);
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
