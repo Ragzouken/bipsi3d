@@ -149,6 +149,8 @@ async function start() {
     // tileset & designs
     const cursorImage = await loadImage("./assets/cursor.png");
     const cursorTex = makeTexture(cursorImage);
+    const nubImage = await loadImage("./assets/nub.png");
+    const nubTex = makeTexture(nubImage);
     const tilesImage = await loadImage("./assets/level1.png");
     const tilesTex = makeTexture(tilesImage);
 
@@ -202,7 +204,17 @@ async function start() {
     const cube = new THREE.Mesh(cubeGeo, cubeMat);
     cube.scale.multiplyScalar(1.01);
 
-    scene.add(cube);
+    const nubMat = new THREE.MeshBasicMaterial({ map: nubTex, alphaTest: .5 });
+    const nub = new THREE.Mesh(cubeGeo, nubMat);
+    nub.scale.set(1, 0.1, 1);
+
+    const cursor = new THREE.Object3D();
+    cursor.add(cube);
+    
+    nub.position.set(0, .5, 0);
+    cursor.add(nub);
+
+    scene.add(cursor);
     const plane = new THREE.Plane();
     plane.normal.set(0, -1, 0);
     
@@ -273,7 +285,8 @@ async function start() {
             new THREE.Vector3( Infinity,  Infinity,  Infinity),
         );
 
-        cube.visible = false;
+        cursor.visible = false;
+        nub.visible = false;
         grid.visible = false;
 
         if (editState.layerMode) {
@@ -290,39 +303,45 @@ async function start() {
             const block = level.blockMap.raycastBlocks(raycaster, bounds);
 
             if (block) {
-                cube.visible = true;
-                cube.position.copy(block.position);
+                cursor.visible = true;
+                cursor.position.copy(block.position);
 
                 grid.visible = true;
-                grid.position.x = cube.position.x;
-                grid.position.z = cube.position.z;
+                grid.position.x = cursor.position.x;
+                grid.position.z = cursor.position.z;
             } else if (point && point.distanceTo(focusTarget) < 20) {
-                cube.visible = true;
-                cube.position.copy(point);
-                cube.position.y += above ? .5 : -.5;
-                cube.position.round();
+                cursor.visible = true;
+                cursor.position.copy(point);
+                cursor.position.y += above ? .5 : -.5;
+                cursor.position.round();
 
                 grid.visible = true;
-                grid.position.x = cube.position.x;
-                grid.position.z = cube.position.z;
+                grid.position.x = cursor.position.x;
+                grid.position.z = cursor.position.z;
+            }
+
+            if (cursor.visible && pressed["MouseLeft"]) {
+                level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
             }
         } else {
             const block = level.blockMap.raycastBlocks(raycaster);
 
             if (block) {
-                cube.visible = true;
-                cube.position.copy(block.position);
-                cube.position.add(block.normal);
+                cursor.visible = true;
+                cursor.position.copy(block.position);
+                //cursor.position.add(block.normal);
 
                 const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(block.normal) < 0.1);
                 const quat = orthoOrients[orthoIndex];
-                cube.rotation.setFromQuaternion(quat);
-            }
-        }
+                cursor.rotation.setFromQuaternion(quat);
 
-        if (cube.visible && pressed["MouseLeft"]) {
-            level.blockMap.setBlockAt(cube.position, "cube", 0, 0);
-            // focusTarget.copy(cube.position);
+                if (pressed["MouseLeft"]) {
+                    const pos = cursor.position.clone().add(block.normal);
+                    level.blockMap.setBlockAt(pos, "cube", 0, 0);
+                }
+                
+                nub.visible = true;
+            }
         }
 
         stats.update();
