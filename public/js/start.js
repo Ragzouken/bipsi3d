@@ -151,6 +151,11 @@ async function start() {
     const cursorTex = makeTexture(cursorImage);
     const nubImage = await loadImage("./assets/nub.png");
     const nubTex = makeTexture(nubImage);
+    const cellImage = await loadImage("./assets/cell.png");
+    const cellTex = makeTexture(cellImage);
+    cellTex.wrapS = THREE.RepeatWrapping;
+    cellTex.wrapT = THREE.RepeatWrapping;
+    // cellTex.repeat.set(16, 16);
     const tilesImage = await loadImage("./assets/level1.png");
     const tilesTex = makeTexture(tilesImage);
 
@@ -158,9 +163,17 @@ async function start() {
     const level = new RoomRendering(tilesTex);
     scene.add(level);
 
+    const gridGeo = new THREE.PlaneGeometry(16, 16);
+    gridGeo.rotateX(-Math.PI * .5);
+    gridGeo.translate(-.5, .01, -.5);
+    const gridMat = new THREE.MeshBasicMaterial({ map: cellTex, alphaTest: .5 });
+    // const grid = new THREE.Mesh(gridGeo, gridMat);
+    // scene.add(grid2);
+
     const grid = new GridHelper(16, 16);
     grid.name = "Edit Plane";
-    grid.geometry.translate(-.5, 0, -.5);
+    grid.geometry.translate(-.5, 0.01, -.5);
+    grid.material.map = cellTex;
     scene.add(grid);
 
     const max = 8;
@@ -202,7 +215,7 @@ async function start() {
     const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
     const cubeMat = new THREE.MeshBasicMaterial({ map: cursorTex, alphaTest: .5, side: THREE.DoubleSide });
     const cube = new THREE.Mesh(cubeGeo, cubeMat);
-    cube.scale.multiplyScalar(1.01);
+    cube.scale.multiplyScalar(1.02);
 
     const nubMat = new THREE.MeshBasicMaterial({ map: nubTex, alphaTest: .5 });
     const nub = new THREE.Mesh(cubeGeo, nubMat);
@@ -300,7 +313,7 @@ async function start() {
 
             plane.setFromNormalAndCoplanarPoint(plane.normal, grid.position);
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
-            const block = level.blockMap.raycastBlocks(raycaster, bounds);
+            const block = false;//level.blockMap.raycastBlocks(raycaster, bounds);
 
             if (block) {
                 cursor.visible = true;
@@ -320,7 +333,7 @@ async function start() {
                 grid.position.z = cursor.position.z;
             }
 
-            if (cursor.visible && pressed["MouseLeft"]) {
+            if (cursor.visible && held["MouseLeft"]) {
                 level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
             }
         } else {
@@ -374,12 +387,13 @@ async function start() {
     });
 }
 
-class GridHelper extends THREE.LineSegments {
-	constructor(size = 10, divisions = 10, color1 = new THREE.Color("black")) {
+class GridHelper extends THREE.Mesh {
+	constructor(size = 10, divisions = 10, color1 = new THREE.Color("white"), texture) {
 		const halfSize = size / 2;
 
 		const vertices = [];
         const colors = [];
+        const uvs = [];
         const index = [];
 
         for (let z = 0; z < divisions; ++z) {
@@ -390,13 +404,19 @@ class GridHelper extends THREE.LineSegments {
 
                 vertices.push(x - halfSize, 0, z - halfSize);
                 colors.push(color1.r, color1.g, color1.b, 1 - Math.min(1, d / (halfSize - 1)));
+                uvs.push(z % 2, x % 2);
 
-                if (z > 0) {
-                    index.push((z - 1) * divisions + x - 1, (z * divisions) + x);
-                }
-                
-                if (x > 0) {
-                    index.push(z * divisions + x - 1, (z * divisions) + x);
+                if (z > 0 && x > 0) {
+                    const v0 = (z - 1) * divisions + x - 1;
+                    const v1 = (z - 1) * divisions + x;
+                    const v2 = z * divisions + x;
+                    const v3 = z * divisions + x - 1;
+
+                    index.push(v3, v2, v1);
+                    index.push(v3, v1, v0);
+
+                    // index.push((z - 1) * divisions + x - 1, (z * divisions) + x);
+                    // index.push(z * divisions + x - 1, (z * divisions) + x);
                 }
             }
         }
@@ -404,9 +424,10 @@ class GridHelper extends THREE.LineSegments {
 		const geometry = new THREE.BufferGeometry();
 		geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
 		geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+		geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
         geometry.setIndex(index);
 
-		const material = new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false, transparent: true });
+		const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, map: texture, side: THREE.DoubleSide });
 
 		super(geometry, material);
 
