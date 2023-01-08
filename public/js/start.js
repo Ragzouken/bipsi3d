@@ -287,57 +287,56 @@ async function start() {
         nub.visible = false;
         grid.visible = false;
 
-        if (!held["MouseRight"]) {
-            if (editState.layerMode) {
-                grid.position.copy(focus);
-                grid.position.add(ortho.clone().multiplyScalar(.49));
-                grid.lookAt(focus);
+        if (editState.layerMode) {
+            grid.position.copy(focus);
+            grid.position.add(ortho.clone().multiplyScalar(.49));
+            grid.lookAt(focus);
 
-                plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
-                const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
-                const block = false;//level.blockMap.raycastBlocks(raycaster, bounds);
+            plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
+            const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+            const block = false;//level.blockMap.raycastBlocks(raycaster, bounds);
 
-                if (block) {
-                    cursor.visible = true;
-                    cursor.position.copy(block.position);
+            if (block) {
+                cursor.visible = true;
+                cursor.position.copy(block.position);
 
-                    grid.visible = true;
-                    if (ortho.x === 0) grid.position.x = cursor.position.x; 
-                    if (ortho.y === 0) grid.position.y = cursor.position.y;
-                    if (ortho.z === 0) grid.position.z = cursor.position.z;
-                } else if (point && point.distanceTo(focus) < 20) {
-                    cursor.visible = true;
-                    cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
+                grid.visible = true;
+                if (ortho.x === 0) grid.position.x = cursor.position.x; 
+                if (ortho.y === 0) grid.position.y = cursor.position.y;
+                if (ortho.z === 0) grid.position.z = cursor.position.z;
+            } else if (point && point.distanceTo(focus) < 20) {
+                cursor.visible = true;
+                cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
 
-                    grid.visible = true;
-                    if (ortho.x === 0) grid.position.x = cursor.position.x; 
-                    if (ortho.y === 0) grid.position.y = cursor.position.y;
-                    if (ortho.z === 0) grid.position.z = cursor.position.z;
+                grid.visible = true;
+                if (ortho.x === 0) grid.position.x = cursor.position.x; 
+                if (ortho.y === 0) grid.position.y = cursor.position.y;
+                if (ortho.z === 0) grid.position.z = cursor.position.z;
+            }
+
+            cursor.visible = cursor.visible && !held["MouseRight"];
+            if (cursor.visible && held["MouseLeft"]) {
+                level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
+                focus.copy(cursor.position);
+            }
+        } else {
+            const block = level.blockMap.raycastBlocks(raycaster);
+
+            if (block) {
+                cursor.visible = true;
+                cursor.position.copy(block.position);
+                //cursor.position.add(block.normal);
+
+                const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(block.normal) < 0.1);
+                const quat = orthoOrients[orthoIndex];
+                cursor.rotation.setFromQuaternion(quat);
+
+                if (pressed["MouseLeft"]) {
+                    const pos = cursor.position.clone().add(block.normal);
+                    level.blockMap.setBlockAt(pos, "cube", 0, 0);
                 }
-
-                if (cursor.visible && held["MouseLeft"]) {
-                    level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
-                    focus.copy(cursor.position);
-                }
-            } else {
-                const block = level.blockMap.raycastBlocks(raycaster);
-
-                if (block) {
-                    cursor.visible = true;
-                    cursor.position.copy(block.position);
-                    //cursor.position.add(block.normal);
-
-                    const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(block.normal) < 0.1);
-                    const quat = orthoOrients[orthoIndex];
-                    cursor.rotation.setFromQuaternion(quat);
-
-                    if (pressed["MouseLeft"]) {
-                        const pos = cursor.position.clone().add(block.normal);
-                        level.blockMap.setBlockAt(pos, "cube", 0, 0);
-                    }
-                    
-                    nub.visible = true;
-                }
+                
+                nub.visible = true;
             }
         }
 
@@ -406,6 +405,7 @@ async function start() {
 
     renderer.domElement.addEventListener("contextmenu", (event) => {
         event.preventDefault();
+        event.stopPropagation();
     });
 
     renderer.domElement.addEventListener("wheel", (event) => {
