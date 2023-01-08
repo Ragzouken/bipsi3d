@@ -1,6 +1,6 @@
 "use strict";
 
-class BlocksMaterial extends THREE.MeshPhongMaterial {
+class BlocksMaterial extends THREE.MeshLambertMaterial {
     /**
      * @param {THREE.Texture} texture
      * @param {BlockDesignData} designs

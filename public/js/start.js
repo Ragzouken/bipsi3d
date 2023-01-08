@@ -127,16 +127,6 @@ async function start() {
 
     const cameraFocus = new THREE.Object3D();
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.mouseButtons.LEFT = -1;
-    controls.mouseButtons.MIDDLE = -1;
-    controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
-    controls.enablePan = false;
-    controls.rotateSpeed = .5;
-
-    // const controls = new FlyControls(camera, renderer.domElement);
-    // controls.dragToLook = true;
-
     function makeTexture(image) {
         const texture = new THREE.Texture(image);
         texture.magFilter = THREE.NearestFilter;
@@ -172,7 +162,7 @@ async function start() {
 
     const grid = new GridHelper(16, 16);
     grid.name = "Edit Plane";
-    grid.geometry.translate(-.5, 0.01, -.5);
+    grid.geometry.translate(-.5, 0, -.5);
     grid.geometry.rotateX(-Math.PI * .5);
     grid.material.map = cellTex;
     scene.add(grid);
@@ -248,11 +238,11 @@ async function start() {
         const delta = focus.clone().sub(cameraFocus.position);
         cameraFocus.position.add(delta.multiplyScalar(.25+dt));
         cameraFocus.updateMatrixWorld();
-        //controls.target.copy(cameraFocus.position);
-
-        controls.update(dt);
 
         const forward = camera.getWorldDirection(new THREE.Vector3());
+        const right = forward.clone().set(1, 0, 0).applyQuaternion(camera.quaternion);
+        const up = forward.clone().set(0, 1, 0).applyQuaternion(camera.quaternion);
+
         ortho = nearestOrthoNormal(forward, ortho ? .75 : 0) ?? ortho;
 
         if (pressed["="]) focus.add(ortho);
@@ -267,7 +257,7 @@ async function start() {
 
             if (editState.layerMode) {
                 const sign = Math.sign(ortho.x + ortho.y + ortho.z);
-                const adjust = (sign > 0 ? 0 : 1) //- (inclusive ? 0 : sign); 
+                const adjust = (sign > 0 ? 0 : 1) //- (inclusive ? 0 : sign);
                 if (sign > 0) primary = !primary;
 
                 const bound = primary ? level.bounds.max : level.bounds.min;
@@ -279,21 +269,6 @@ async function start() {
             
             level.update();
         }
-
-        renderer.autoClear = false;
-
-        if (editState.layerMode) {
-            clip(false, false);
-            renderer.setRenderTarget(shadow);
-            renderer.clear(true, true, true);
-            renderer.render(level, camera);
-        }
-
-        clip(true);
-        renderer.setRenderTarget(null);
-        renderer.clear(true, true, true);
-        renderer.render(scene, camera);
-        renderer.render(compMesh, compCamera);
 
         compMesh.visible = editState.layerMode;
 
@@ -311,16 +286,8 @@ async function start() {
 
         if (editState.layerMode) {
             grid.position.copy(focus);
-            grid.position.add(ortho.clone().multiplyScalar(.5));
+            grid.position.add(ortho.clone().multiplyScalar(.49));
             grid.lookAt(focus);
-
-            // if (above) {
-            //     bounds.min.y = grid.position.y + 0;
-            //     bounds.max.y = grid.position.y + 1;
-            // } else {
-            //     bounds.min.y = grid.position.y - 1;
-            //     bounds.max.y = grid.position.y + 0;
-            // }
 
             plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
@@ -331,11 +298,17 @@ async function start() {
                 cursor.position.copy(block.position);
 
                 grid.visible = true;
+                if (ortho.x === 0) grid.position.x = cursor.position.x; 
+                if (ortho.y === 0) grid.position.y = cursor.position.y;
+                if (ortho.z === 0) grid.position.z = cursor.position.z;
             } else if (point && point.distanceTo(focus) < 20) {
                 cursor.visible = true;
                 cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
 
                 grid.visible = true;
+                if (ortho.x === 0) grid.position.x = cursor.position.x; 
+                if (ortho.y === 0) grid.position.y = cursor.position.y;
+                if (ortho.z === 0) grid.position.z = cursor.position.z;
             }
 
             if (cursor.visible && held["MouseLeft"]) {
@@ -363,6 +336,33 @@ async function start() {
             }
         }
 
+        if (held["w"]) camera.position.addScaledVector(forward, dt * 7);
+        if (held["s"]) camera.position.addScaledVector(forward, dt * -7);
+        if (held["a"]) camera.position.addScaledVector(right, dt * -7);
+        if (held["d"]) camera.position.addScaledVector(right, dt *  7);
+        if (held[" "]) camera.position.addScaledVector(new THREE.Vector3(0, 1, 0), dt *  7);
+        if (held["Shift"]) camera.position.addScaledVector(new THREE.Vector3(0, 1, 0), dt *  -7);
+
+        if (held["q"]) camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), dt * 1);
+        if (held["e"]) camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), dt * -1);
+
+        renderer.autoClear = false;
+
+        level.fog = scene.fog;
+
+        if (editState.layerMode) {
+            clip(false, false);
+            renderer.setRenderTarget(shadow);
+            renderer.clear(true, true, true);
+            renderer.render(level, camera);
+        }
+
+        clip(true);
+        renderer.setRenderTarget(null);
+        renderer.clear(true, true, true);
+        renderer.render(scene, camera);
+        renderer.render(compMesh, compCamera);
+
         stats.update();
         pressed = {};
     };
@@ -388,9 +388,33 @@ async function start() {
         held[event.key] = false;
     });
 
-    window.addEventListener("blur", (event) => {
+    function clearHeld() {
         held = {};
+    }
+
+    renderer.domElement.addEventListener("mousemove", (event) => {
+        if (held["MouseRight"]) {
+            camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), event.movementY * -0.005);
+            camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), event.movementX * -0.005);
+        }
     });
+
+    renderer.domElement.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+    });
+
+    renderer.domElement.addEventListener("wheel", (event) => {
+        // if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+            if (event.deltaY < 0) {
+                focus.add(ortho);
+            } else {
+                focus.sub(ortho);
+            }
+        // }
+    });
+
+    window.addEventListener("contextmenu", clearHeld);
+    window.addEventListener("blur", clearHeld);
 }
 
 class GridHelper extends THREE.Mesh {
