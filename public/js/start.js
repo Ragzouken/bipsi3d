@@ -164,7 +164,7 @@ async function start() {
     scene.add(level);
 
     const gridGeo = new THREE.PlaneGeometry(16, 16);
-    gridGeo.rotateX(-Math.PI * .5);
+    // gridGeo.rotateX(-Math.PI * .5);
     gridGeo.translate(-.5, .01, -.5);
     const gridMat = new THREE.MeshBasicMaterial({ map: cellTex, alphaTest: .5 });
     // const grid = new THREE.Mesh(gridGeo, gridMat);
@@ -173,11 +173,12 @@ async function start() {
     const grid = new GridHelper(16, 16);
     grid.name = "Edit Plane";
     grid.geometry.translate(-.5, 0.01, -.5);
+    grid.geometry.rotateX(-Math.PI * .5);
     grid.material.map = cellTex;
     scene.add(grid);
 
-    const max = 8;
-    const sub = 4;
+    const max = 6;
+    const sub = 3;
 
     const types = [...level.blockMap.meshes.keys()];
 
@@ -235,54 +236,59 @@ async function start() {
     const focusTarget = new THREE.Vector3(0, 0.5, 0);
     focusTarget.copy(cameraFocus.position);
 
+    const focus = new THREE.Vector3(0, 0, 0);
+
     level.bounds.max.y = 4;
     function animate(dt) {
-        if (pressed["="]) {
-            focusTarget.y += 1;
-        }
-        if (pressed["-"]) {
-            focusTarget.y -= 1;
-        }
         if (pressed["l"]) {
             editState.layerMode = !editState.layerMode;
         }
 
-        const delta = focusTarget.clone().sub(cameraFocus.position);
+        const delta = focus.clone().sub(cameraFocus.position);
         cameraFocus.position.add(delta.multiplyScalar(.25+dt));
-
         cameraFocus.updateMatrixWorld();
         //controls.target.copy(cameraFocus.position);
 
         controls.update(dt);
 
         const forward = camera.getWorldDirection(new THREE.Vector3());
-        const above = up.dot(forward) < 0;
+        const ortho = nearestOrthoNormal(forward);
 
-        function clip(above, inclusive=true) {
+        if (pressed["="]) focus.add(ortho);
+        if (pressed["-"]) focus.sub(ortho);
+
+        level.bounds.min.set(-Infinity, -Infinity, -Infinity);
+        level.bounds.max.set( Infinity,  Infinity,  Infinity);
+
+        function clip(primary, inclusive=true) {
+            level.bounds.min.set(-Infinity, -Infinity, -Infinity);
+            level.bounds.max.set( Infinity,  Infinity,  Infinity);
+
             if (editState.layerMode) {
-                const adjust = inclusive ? 0 : 1;
-                level.bounds.min.y = !above ? Math.floor(focusTarget.y)   + adjust : -Infinity;
-                level.bounds.max.y =  above ? Math.floor(focusTarget.y)+1 - adjust :  Infinity;
-            } else {
-                level.bounds.min.y = -Infinity;
-                level.bounds.max.y =  Infinity;
-            }
+                const sign = Math.sign(ortho.x + ortho.y + ortho.z);
+                const adjust = (sign > 0 ? 0 : 1) //- (inclusive ? 0 : sign); 
+                if (sign > 0) primary = !primary;
+
+                const bound = primary ? level.bounds.max : level.bounds.min;
+
+                if (ortho.x !== 0) bound.x = focus.x + adjust;
+                if (ortho.y !== 0) bound.y = focus.y + adjust;
+                if (ortho.z !== 0) bound.z = focus.z + adjust;
+            } 
+            
             level.update();
-        
-            // grid.position.copy(focusTarget);
-            grid.position.y = focusTarget.y + (above ? -.5 : .5);
         }
 
         renderer.autoClear = false;
 
         if (editState.layerMode) {
-            clip(!above, false);
+            clip(false, false);
             renderer.setRenderTarget(shadow);
             renderer.clear(true, true, true);
             renderer.render(level, camera);
         }
 
-        clip(above);
+        clip(true);
         renderer.setRenderTarget(null);
         renderer.clear(true, true, true);
         renderer.render(scene, camera);
@@ -303,15 +309,19 @@ async function start() {
         grid.visible = false;
 
         if (editState.layerMode) {
-            if (above) {
-                bounds.min.y = grid.position.y + 0;
-                bounds.max.y = grid.position.y + 1;
-            } else {
-                bounds.min.y = grid.position.y - 1;
-                bounds.max.y = grid.position.y + 0;
-            }
+            grid.position.copy(focus);
+            grid.position.add(ortho.clone().multiplyScalar(.5));
+            grid.lookAt(focus);
 
-            plane.setFromNormalAndCoplanarPoint(plane.normal, grid.position);
+            // if (above) {
+            //     bounds.min.y = grid.position.y + 0;
+            //     bounds.max.y = grid.position.y + 1;
+            // } else {
+            //     bounds.min.y = grid.position.y - 1;
+            //     bounds.max.y = grid.position.y + 0;
+            // }
+
+            plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
             const block = false;//level.blockMap.raycastBlocks(raycaster, bounds);
 
@@ -320,21 +330,16 @@ async function start() {
                 cursor.position.copy(block.position);
 
                 grid.visible = true;
-                grid.position.x = cursor.position.x;
-                grid.position.z = cursor.position.z;
-            } else if (point && point.distanceTo(focusTarget) < 20) {
+            } else if (point && point.distanceTo(focus) < 20) {
                 cursor.visible = true;
-                cursor.position.copy(point);
-                cursor.position.y += above ? .5 : -.5;
-                cursor.position.round();
+                cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
 
                 grid.visible = true;
-                grid.position.x = cursor.position.x;
-                grid.position.z = cursor.position.z;
             }
 
             if (cursor.visible && held["MouseLeft"]) {
                 level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
+                focus.copy(cursor.position);
             }
         } else {
             const block = level.blockMap.raycastBlocks(raycaster);

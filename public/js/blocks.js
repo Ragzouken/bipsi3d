@@ -30,6 +30,24 @@ orthoNormals.forEach((up, i) => {
 });
 
 /**
+ * @param {THREE.Vector3} normal
+ * @returns {THREE.Vector3}
+ */
+function nearestOrthoNormal(normal) {
+    let max = -Infinity;
+    let ortho = undefined;
+
+    orthoNormals.forEach((o) => {
+        if (o.dot(normal) > max) {
+            max = o.dot(normal);
+            ortho = o;
+        }
+    });
+
+    return ortho;
+}
+
+/**
  * @param {THREE.Quaternion} quaternion
  */
 function quaternionToS4(quaternion) {
