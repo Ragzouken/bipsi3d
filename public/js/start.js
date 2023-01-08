@@ -63,6 +63,8 @@ class RoomRendering extends THREE.Object3D {
     }
 }
 
+const UP = Object.freeze(new THREE.Vector3(0, 1, 0));
+
 async function start() {
     const clock = new THREE.Clock();
     const stats = new Stats();
@@ -222,7 +224,6 @@ async function start() {
     const plane = new THREE.Plane();
     plane.normal.set(0, -1, 0);
     
-    const up = new THREE.Vector3(0, 1, 0);
     const focusTarget = new THREE.Vector3(0, 0.5, 0);
     focusTarget.copy(cameraFocus.position);
 
@@ -241,9 +242,11 @@ async function start() {
 
         const forward = camera.getWorldDirection(new THREE.Vector3());
         const right = forward.clone().set(1, 0, 0).applyQuaternion(camera.quaternion);
-        const up = forward.clone().set(0, 1, 0).applyQuaternion(camera.quaternion);
 
-        ortho = nearestOrthoNormal(forward, ortho ? .75 : 0) ?? ortho;
+        const vert = Math.abs(UP.dot(forward)) > .3;
+        
+        if (vert) ortho = forward.y > 0 ? UP : UP.clone().multiplyScalar(-1);
+        else ortho = nearestOrthoNormal(forward, ortho ? .75 : 0) ?? ortho;
 
         if (pressed["="]) focus.add(ortho);
         if (pressed["-"]) focus.sub(ortho);
@@ -284,55 +287,57 @@ async function start() {
         nub.visible = false;
         grid.visible = false;
 
-        if (editState.layerMode) {
-            grid.position.copy(focus);
-            grid.position.add(ortho.clone().multiplyScalar(.49));
-            grid.lookAt(focus);
+        if (!held["MouseRight"]) {
+            if (editState.layerMode) {
+                grid.position.copy(focus);
+                grid.position.add(ortho.clone().multiplyScalar(.49));
+                grid.lookAt(focus);
 
-            plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
-            const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
-            const block = false;//level.blockMap.raycastBlocks(raycaster, bounds);
+                plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
+                const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+                const block = false;//level.blockMap.raycastBlocks(raycaster, bounds);
 
-            if (block) {
-                cursor.visible = true;
-                cursor.position.copy(block.position);
+                if (block) {
+                    cursor.visible = true;
+                    cursor.position.copy(block.position);
 
-                grid.visible = true;
-                if (ortho.x === 0) grid.position.x = cursor.position.x; 
-                if (ortho.y === 0) grid.position.y = cursor.position.y;
-                if (ortho.z === 0) grid.position.z = cursor.position.z;
-            } else if (point && point.distanceTo(focus) < 20) {
-                cursor.visible = true;
-                cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
+                    grid.visible = true;
+                    if (ortho.x === 0) grid.position.x = cursor.position.x; 
+                    if (ortho.y === 0) grid.position.y = cursor.position.y;
+                    if (ortho.z === 0) grid.position.z = cursor.position.z;
+                } else if (point && point.distanceTo(focus) < 20) {
+                    cursor.visible = true;
+                    cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
 
-                grid.visible = true;
-                if (ortho.x === 0) grid.position.x = cursor.position.x; 
-                if (ortho.y === 0) grid.position.y = cursor.position.y;
-                if (ortho.z === 0) grid.position.z = cursor.position.z;
-            }
-
-            if (cursor.visible && held["MouseLeft"]) {
-                level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
-                focus.copy(cursor.position);
-            }
-        } else {
-            const block = level.blockMap.raycastBlocks(raycaster);
-
-            if (block) {
-                cursor.visible = true;
-                cursor.position.copy(block.position);
-                //cursor.position.add(block.normal);
-
-                const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(block.normal) < 0.1);
-                const quat = orthoOrients[orthoIndex];
-                cursor.rotation.setFromQuaternion(quat);
-
-                if (pressed["MouseLeft"]) {
-                    const pos = cursor.position.clone().add(block.normal);
-                    level.blockMap.setBlockAt(pos, "cube", 0, 0);
+                    grid.visible = true;
+                    if (ortho.x === 0) grid.position.x = cursor.position.x; 
+                    if (ortho.y === 0) grid.position.y = cursor.position.y;
+                    if (ortho.z === 0) grid.position.z = cursor.position.z;
                 }
-                
-                nub.visible = true;
+
+                if (cursor.visible && held["MouseLeft"]) {
+                    level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
+                    focus.copy(cursor.position);
+                }
+            } else {
+                const block = level.blockMap.raycastBlocks(raycaster);
+
+                if (block) {
+                    cursor.visible = true;
+                    cursor.position.copy(block.position);
+                    //cursor.position.add(block.normal);
+
+                    const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(block.normal) < 0.1);
+                    const quat = orthoOrients[orthoIndex];
+                    cursor.rotation.setFromQuaternion(quat);
+
+                    if (pressed["MouseLeft"]) {
+                        const pos = cursor.position.clone().add(block.normal);
+                        level.blockMap.setBlockAt(pos, "cube", 0, 0);
+                    }
+                    
+                    nub.visible = true;
+                }
             }
         }
 
@@ -444,9 +449,6 @@ class GridHelper extends THREE.Mesh {
 
                     index.push(v3, v2, v1);
                     index.push(v3, v1, v0);
-
-                    // index.push((z - 1) * divisions + x - 1, (z * divisions) + x);
-                    // index.push(z * divisions + x - 1, (z * divisions) + x);
                 }
             }
         }
