@@ -237,6 +237,7 @@ async function start() {
     focusTarget.copy(cameraFocus.position);
 
     const focus = new THREE.Vector3(0, 0, 0);
+    let ortho = undefined;
 
     level.bounds.max.y = 4;
     function animate(dt) {
@@ -252,7 +253,7 @@ async function start() {
         controls.update(dt);
 
         const forward = camera.getWorldDirection(new THREE.Vector3());
-        const ortho = nearestOrthoNormal(forward);
+        ortho = nearestOrthoNormal(forward, ortho ? .75 : 0) ?? ortho;
 
         if (pressed["="]) focus.add(ortho);
         if (pressed["-"]) focus.sub(ortho);

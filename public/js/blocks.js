@@ -31,10 +31,11 @@ orthoNormals.forEach((up, i) => {
 
 /**
  * @param {THREE.Vector3} normal
+ * @param {number} threshold
  * @returns {THREE.Vector3}
  */
-function nearestOrthoNormal(normal) {
-    let max = -Infinity;
+function nearestOrthoNormal(normal, threshold=-Infinity) {
+    let max = threshold;
     let ortho = undefined;
 
     orthoNormals.forEach((o) => {
