@@ -378,6 +378,9 @@ class BlockMap extends THREE.Object3D {
             mesh.name = `Instanced Blocks (${type})`;
             this.meshes.set(type, mesh);
             this.add(mesh);
+            
+            mesh.receiveShadow = true;
+            mesh.castShadow = true;
         });
     }
 
@@ -453,22 +456,19 @@ class BlockMap extends THREE.Object3D {
         for (let intersect of intersects) {
             const renderer = /** @type {BlockShapeInstances} */ (intersect.object);
             const position = new THREE.Vector3();
-            const normal = new THREE.Vector3();
 
             renderer.getPositionAt(intersect.instanceId, position);
+            const rot = renderer.getRotationAt(intersect.instanceId);
+            const quat = S4Quats[rot];
             
             if (bounds && !bounds.containsPoint(position)) continue;
-
-            const normalMatrix = new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld);
-            normal.fromBufferAttribute(renderer.geometry.getAttribute("normal"), intersect.face.a);
-            normal.applyNormalMatrix(normalMatrix);
 
             //const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(first.) < 0.1);
 
             return {
                 intersection: intersect,
-                position,    
-                normal,            
+                position,
+                normal: intersect.face.normal.clone().applyQuaternion(quat),
             }
         }
     }

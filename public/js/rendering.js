@@ -142,7 +142,7 @@ const tileUVs = `
 /** 
  * @param {THREE.Shader} shader
  */
-function blockShapeShaderFixer(shader) {
+function blockShapeShaderFixer(shader, log=false) {
     shader.uniforms.frame = { value: 1 };
     shader.uniforms.tileScale = { value: 1/cols };
     shader.uniforms.S4_TRANSFORM_LOOKUP = { value: S4_TRANSFORM_LOOKUP };
@@ -159,30 +159,58 @@ function blockShapeShaderFixer(shader) {
 
     shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
 ` + blockTileDefines);
+    shader.vertexShader = shader.vertexShader.replace("main() {", `main() {
+    mat4 blockMatrix = mapCube(instanceOrientation.xyz, int(instanceOrientation.w));`.trim())
     shader.vertexShader = shader.vertexShader.replace("#include <uv_vertex>", tileUVs);
+    shader.vertexShader = shader.vertexShader.replace("#include <defaultnormal_vertex>", `
+    vec3 transformedNormal = objectNormal;
+    #ifdef USE_INSTANCING
+        transformedNormal = mat3(blockMatrix) * transformedNormal;
+    #endif
+    transformedNormal = normalMatrix * transformedNormal;
+    #ifdef FLIP_SIDED
+        transformedNormal = - transformedNormal;
+    #endif
+    #ifdef USE_TANGENT
+        vec3 transformedTangent = ( modelViewMatrix * vec4( objectTangent, 0.0 ) ).xyz;
+        #ifdef FLIP_SIDED
+            transformedTangent = - transformedTangent;
+        #endif
+    #endif
+        `.trim());
     shader.vertexShader = shader.vertexShader.replace("#include <project_vertex>", `
-vec4 mvPosition = vec4(transformed, 1.0);
-mat4 blockMatrix = mapCube(instanceOrientation.xyz, int(instanceOrientation.w));
-mat4 combined = projectionMatrix * modelViewMatrix * blockMatrix; 
+    vec4 mvPosition = vec4(transformed, 1.0);
 
-// pull backfaces in a little to prevent z-fighting inside transparent blocks
-vec3 norm = transformDirection(normal, combined);
-float offset = dot(norm, vec3(0.0, 0.0, 1.0));
-mvPosition.xyz -= normal * clamp(offset, 0.0, 1.0) * 0.001;
+    // pull backfaces in a little to prevent z-fighting inside transparent blocks
+    vec3 norm = transformDirection(normal, projectionMatrix * modelViewMatrix * blockMatrix);
+    float offset = dot(norm, vec3(0.0, 0.0, 1.0));
+    mvPosition.xyz -= normal * clamp(offset, 0.0, 1.0) * 0.001;
 
-mvPosition = modelViewMatrix * blockMatrix * mvPosition;
-gl_Position = projectionMatrix * mvPosition;
+    mvPosition = modelViewMatrix * blockMatrix * mvPosition;
+    gl_Position = projectionMatrix * mvPosition;
 
-// culling
-float inside = insideBox3D(instanceOrientation.xyz, boundMin, boundMax);
-gl_Position *= vec4(inside);
+    // culling
+    float inside = insideBox3D(instanceOrientation.xyz, boundMin, boundMax);
+    gl_Position *= vec4(inside);
 
-#ifdef USE_UV
-    // don't render tile 0
-    if (tile.x == 0.0) gl_Position = vec4(0.0);
-#endif
+    #ifdef USE_UV
+        // don't render tile 0
+        if (tile.x == 0.0) gl_Position = vec4(0.0);
+    #endif
         `.trim(),
     );
+    shader.vertexShader = shader.vertexShader.replace("#include <worldpos_vertex>", `
+    #if defined( USE_ENVMAP ) || defined( DISTANCE ) || defined ( USE_SHADOWMAP ) || defined ( USE_TRANSMISSION ) || NUM_SPOT_LIGHT_COORDS > 0
+        vec4 worldPosition = vec4( transformed, 1.0 );
+        #ifdef USE_INSTANCING
+            worldPosition = blockMatrix * worldPosition;
+        #endif
+        worldPosition = modelMatrix * worldPosition;
+    #endif
+        `.trim(),
+    );
+
+    if (log) console.log(shader.vertexShader)
 };
 
 /** 
@@ -295,6 +323,14 @@ class BlockShapeInstances extends THREE.InstancedMesh {
 
         this.geometry.setAttribute("instanceOrientation", this.orientation);
         this.geometry.setAttribute("design", this.design);
+
+        this.customDepthMaterial = new THREE.MeshDepthMaterial();
+        this.customDepthMaterial.onBeforeCompile = function (shader) {
+            this.uniforms = shader.uniforms;
+            blockShapeShaderFixer(shader);//, true);
+            shader.uniforms.map = material.uniforms.map;
+            shader.uniforms.blockDesigns = material.uniforms.blockDesigns;
+        }
     }
 
     static _sphere = new THREE.Sphere();

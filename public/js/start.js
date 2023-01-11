@@ -21,11 +21,11 @@ class RoomRendering extends THREE.Object3D {
         };
 
         this.texture = texture;
-        this.tilesetWidth = 512;
-        this.tilesetCols = 16;
+        this.tilesetWidth = 256;
+        this.tilesetCols = 32;
 
         this.designs = new BlockDesignData(8, 4, designCount);
-        for (let i = 0; i < designCount; ++i) this.designs.setDesignAt(i, randomDesign(undefined, 0));
+        for (let i = 0; i < designCount; ++i) this.designs.setDesignAt(i, boxDesign(THREE.MathUtils.randInt(1, 16*16-1), THREE.MathUtils.randInt(1, 16*16-1)));
 
         this.designs.setDesignAt(0, boxDesign(1, 2));
 
@@ -77,6 +77,7 @@ async function start() {
 
     const editState = {
         layerMode: true,
+        looking: false,
     };
 
     // input
@@ -85,6 +86,7 @@ async function start() {
 
     const mouseButtons = {
         0: "MouseLeft",
+        1: "MouseMiddle",
         2: "MouseRight",
     }
 
@@ -110,10 +112,6 @@ async function start() {
     window.addEventListener("pointerup", (event) => {
         held[mouseButtons[event.button] ?? "MouseUnknown"] = false;
     });
-    
-    window.addEventListener("pointermove", (event) => {
-        pointer.set(event.clientX, event.clientY);
-    });
 
     // camera
     const scene = new THREE.Scene();
@@ -126,6 +124,9 @@ async function start() {
 
     const camera = new THREE.PerspectiveCamera(75, 1 / 1, 0.1, 1000);
     camera.position.setZ(5);
+
+    renderer.shadowMap.enabled = true;
+    directionalLight.castShadow = true;
 
     const cameraFocus = new THREE.Object3D();
 
@@ -143,12 +144,16 @@ async function start() {
     const cursorTex = makeTexture(cursorImage);
     const nubImage = await loadImage("./assets/nub.png");
     const nubTex = makeTexture(nubImage);
+    const delNubImage = await loadImage("./assets/delnub.png");
+    const delNubTex = makeTexture(delNubImage);
+    const pickNubImage = await loadImage("./assets/pick.png");
+    const pickNubTex = makeTexture(pickNubImage);
     const cellImage = await loadImage("./assets/cell.png");
     const cellTex = makeTexture(cellImage);
     cellTex.wrapS = THREE.RepeatWrapping;
     cellTex.wrapT = THREE.RepeatWrapping;
     // cellTex.repeat.set(16, 16);
-    const tilesImage = await loadImage("./assets/level1.png");
+    const tilesImage = await loadImage("./assets/test-tiles.png");//"./assets/level1.png");
     const tilesTex = makeTexture(tilesImage);
 
     // level
@@ -162,7 +167,7 @@ async function start() {
     // const grid = new THREE.Mesh(gridGeo, gridMat);
     // scene.add(grid2);
 
-    const grid = new GridHelper(16, 16);
+    const grid = new GridHelper(17, 17);
     grid.name = "Edit Plane";
     grid.geometry.translate(-.5, 0, -.5);
     grid.geometry.rotateX(-Math.PI * .5);
@@ -189,7 +194,7 @@ async function start() {
     //
 
     const shadow = new THREE.WebGLRenderTarget(1, 1);
-    const shadowMaterial = new THREE.MeshBasicMaterial({ map: shadow.texture, opacity: .1, transparent: true, color: 0x00000 });
+    const shadowMaterial = new THREE.MeshBasicMaterial({ map: shadow.texture, opacity: .2, transparent: true, color: 0x00000 });
 
     const compCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const compGeometry = new THREE.PlaneGeometry(2, 2);
@@ -210,15 +215,27 @@ async function start() {
     const cube = new THREE.Mesh(cubeGeo, cubeMat);
     cube.scale.multiplyScalar(1.02);
 
-    const nubMat = new THREE.MeshBasicMaterial({ map: nubTex, alphaTest: .5 });
-    const nub = new THREE.Mesh(cubeGeo, nubMat);
-    nub.scale.set(1, 0.1, 1);
+    const nubGeo = new THREE.PlaneGeometry(1, 1);
+    nubGeo.rotateX(-Math.PI * .5);
+    const nubMat = new THREE.MeshBasicMaterial({ map: nubTex, alphaTest: .5, side: THREE.DoubleSide });
+    const nub = new THREE.Mesh(nubGeo, nubMat);
+
+    const delNubMat = new THREE.MeshBasicMaterial({ map: delNubTex, alphaTest: .5, side: THREE.DoubleSide, color: "red" });
+    const delNub = new THREE.Mesh(cubeGeo, delNubMat);
+    delNub.scale.multiplyScalar(1.02);
+
+    const pickNubMat = new THREE.MeshBasicMaterial({ map: pickNubTex, alphaTest: .5, side: THREE.DoubleSide });
+    const pickNub = new THREE.Mesh(nubGeo, pickNubMat);
 
     const cursor = new THREE.Object3D();
     cursor.add(cube);
     
-    nub.position.set(0, .5, 0);
+    nub.position.set(0, .52, 0);
+    //delNub.position.set(0, .52, 0);
+    pickNub.position.set(0, .52, 0);
     cursor.add(nub);
+    cursor.add(delNub);
+    //cursor.add(pickNub);
 
     scene.add(cursor);
     const plane = new THREE.Plane();
@@ -228,7 +245,12 @@ async function start() {
     focusTarget.copy(cameraFocus.position);
 
     const focus = new THREE.Vector3(0, 0, 0);
-    let ortho = undefined;
+    let ortho = new THREE.Vector3();
+
+    const dragInfo = {};
+
+    const castCube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    castCube.geometry.translate(-.5, -.5, -.5);
 
     level.bounds.max.y = 4;
     function animate(dt) {
@@ -278,14 +300,33 @@ async function start() {
         const norm = getNormalisePointer();
         raycaster.setFromCamera(norm, camera);
 
-        const bounds = new THREE.Box3(
-            new THREE.Vector3(-Infinity, -Infinity, -Infinity),
-            new THREE.Vector3( Infinity,  Infinity,  Infinity),
-        );
-
         cursor.visible = false;
         nub.visible = false;
+        delNub.visible = false;
         grid.visible = false;
+
+        scene.fog.near = 8;
+        scene.fog.far = 8 + 16;
+
+        editState.looking = held["MouseRight"] || held["MouseMiddle"];
+
+        const type = "cube";//types[THREE.MathUtils.randInt(0, types.length-1)];
+
+        if (editState.looking) {
+            renderer.domElement.requestPointerLock();
+        } else {
+            document.exitPointerLock();
+        }
+
+        if (held["MouseMiddle"] && dragInfo.focus) {
+            const delta = pointer.clone().sub(dragInfo.mouse);
+            const h = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), delta.x * .0075);
+            camera.position.copy(dragInfo.camera).applyQuaternion(h).add(dragInfo.focus);
+            camera.lookAt(dragInfo.focus);
+            //camera.applyQuaternion(h.invert());
+        } else {
+            dragInfo.focus = undefined;
+        }
 
         if (editState.layerMode) {
             grid.position.copy(focus);
@@ -294,30 +335,43 @@ async function start() {
 
             plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
-            const block = false;//level.blockMap.raycastBlocks(raycaster, bounds);
-
-            if (block) {
-                cursor.visible = true;
-                cursor.position.copy(block.position);
-
-                grid.visible = true;
-                if (ortho.x === 0) grid.position.x = cursor.position.x; 
-                if (ortho.y === 0) grid.position.y = cursor.position.y;
-                if (ortho.z === 0) grid.position.z = cursor.position.z;
-            } else if (point && point.distanceTo(focus) < 20) {
+            
+            if (point && point.distanceTo(focus) < 20) {
                 cursor.visible = true;
                 cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
 
                 grid.visible = true;
-                if (ortho.x === 0) grid.position.x = cursor.position.x; 
-                if (ortho.y === 0) grid.position.y = cursor.position.y;
-                if (ortho.z === 0) grid.position.z = cursor.position.z;
+                if (!editState.looking) {
+                    if (ortho.x === 0) grid.position.x = cursor.position.x; 
+                    if (ortho.y === 0) grid.position.y = cursor.position.y;
+                    if (ortho.z === 0) grid.position.z = cursor.position.z;
+                }
+
+                const ray = new THREE.Ray(camera.position, forward);
+                const d = ray.intersectPlane(plane, new THREE.Vector3())?.distanceTo(camera.position) ?? 8;
+                scene.fog.near = d;
+                scene.fog.far = d + 16;
+
+                if (pressed["MouseMiddle"] && !dragInfo.focus) {
+                    dragInfo.focus = point.clone().round();
+                    dragInfo.mouse = pointer.clone();
+                    dragInfo.camera = camera.position.clone().sub(dragInfo.focus);
+                }
             }
 
-            cursor.visible = cursor.visible && !held["MouseRight"];
+            cursor.visible = cursor.visible && !editState.looking;
             if (cursor.visible && held["MouseLeft"]) {
-                level.blockMap.setBlockAt(cursor.position, "cube", 0, 0);
+                level.blockMap.setBlockAt(cursor.position, type, THREE.MathUtils.randInt(0, 23), THREE.MathUtils.randInt(0, 4));
                 focus.copy(cursor.position);
+            }
+
+            if (cursor.visible && held["Control"]) {
+                delNub.visible = true;
+                nub.visible = false;
+
+                if (held["MouseLeft"]) {
+                    level.blockMap.delBlockAt(cursor.position);
+                }
             }
         } else {
             const block = level.blockMap.raycastBlocks(raycaster);
@@ -331,31 +385,59 @@ async function start() {
                 const quat = orthoOrients[orthoIndex];
                 cursor.rotation.setFromQuaternion(quat);
 
-                if (pressed["MouseLeft"]) {
+                if (pressed["MouseLeft"] && !held["Control"]) {
                     const pos = cursor.position.clone().add(block.normal);
-                    level.blockMap.setBlockAt(pos, "cube", 0, 0);
+                    level.blockMap.setBlockAt(pos, type, 0, 0);
                 }
                 
                 nub.visible = true;
+
+                if (cursor.visible && held["Control"]) {
+                    delNub.visible = true;
+                    nub.visible = false;
+    
+                    if (pressed["MouseLeft"]) {
+                        level.blockMap.delBlockAt(cursor.position);
+                    }
+                }
+
+                if (pressed["MouseMiddle"] && !dragInfo.focus) {
+                    dragInfo.focus = cursor.position.clone().round();
+                    dragInfo.mouse = pointer.clone();
+                    dragInfo.camera = camera.position.clone().sub(dragInfo.focus);
+                }
             }
         }
 
-        if (held["w"]) camera.position.addScaledVector(forward, dt * 7);
-        if (held["s"]) camera.position.addScaledVector(forward, dt * -7);
-        if (held["a"]) camera.position.addScaledVector(right, dt * -7);
-        if (held["d"]) camera.position.addScaledVector(right, dt *  7);
-        if (held[" "]) camera.position.addScaledVector(new THREE.Vector3(0, 1, 0), dt *  7);
-        if (held["Shift"]) camera.position.addScaledVector(new THREE.Vector3(0, 1, 0), dt *  -7);
+        if (pressed["o"]) {
+            camera.lookAt(camera.position.clone().set(0, 0, 0));
+        }
 
-        if (held["q"]) camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), dt * 1);
-        if (held["e"]) camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), dt * -1);
+        //if (held["MouseRight"]) {
+            if (held["w"]) camera.position.addScaledVector(forward, dt * 7);
+            if (held["s"]) camera.position.addScaledVector(forward, dt * -7);
+            if (held["a"]) camera.position.addScaledVector(right, dt * -7);
+            if (held["d"]) camera.position.addScaledVector(right, dt *  7);
+            if (held[" "]) camera.position.addScaledVector(new THREE.Vector3(0, 1, 0), dt *  7);
+            if (held["Shift"]) camera.position.addScaledVector(new THREE.Vector3(0, 1, 0), dt *  -7);
+        //} else if (editState.layerMode) {
+            // const right2 = ortho.clone().cross(forward).normalize();
+            // const forward2 = right2.clone().cross(ortho).normalize();
+
+            // if (held["w"]) camera.position.addScaledVector(forward2, dt * 7);
+            // if (held["s"]) camera.position.addScaledVector(forward2, dt * -7);
+            // if (held["a"]) camera.position.addScaledVector(right2, dt * -7);
+            // if (held["d"]) camera.position.addScaledVector(right2, dt *  7);
+            // if (held[" "]) camera.position.addScaledVector(ortho, dt *  7);
+            // if (held["Shift"]) camera.position.addScaledVector(ortho, dt *  -7);
+        //}
 
         renderer.autoClear = false;
 
         level.fog = scene.fog;
 
         if (editState.layerMode) {
-            clip(false, false);
+            clip(false);
             renderer.setRenderTarget(shadow);
             renderer.clear(true, true, true);
             renderer.render(level, camera);
@@ -365,7 +447,7 @@ async function start() {
         renderer.setRenderTarget(null);
         renderer.clear(true, true, true);
         renderer.render(scene, camera);
-        renderer.render(compMesh, compCamera);
+        if (editState.layerMode) renderer.render(compMesh, compCamera);
 
         stats.update();
         pressed = {};
@@ -385,21 +467,37 @@ async function start() {
         held[event.key] = true;
         pressed[event.key] = true;
 
+        held[event.key.toLowerCase()] = true;
+        pressed[event.key.toLowerCase()] = true;
+
         if (event.key.includes("Arrow")) event.preventDefault();
+
+        if (event.key.includes("Control")) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
     });
 
     window.addEventListener("keyup", (event) => {
         held[event.key] = false;
+        held[event.key.toLowerCase()] = false;
     });
 
     function clearHeld() {
         held = {};
     }
 
-    renderer.domElement.addEventListener("mousemove", (event) => {
+    window.addEventListener("mousemove", (event) => {
         if (held["MouseRight"]) {
             camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), event.movementY * -0.005);
             camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), event.movementX * -0.005);
+        }
+
+        if (document.pointerLockElement) {
+            pointer.x += event.movementX;
+            pointer.y += event.movementY;
+        } else {
+            pointer.set(event.clientX, event.clientY);
         }
     });
 
@@ -410,11 +508,12 @@ async function start() {
 
     renderer.domElement.addEventListener("wheel", (event) => {
         // if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-            if (event.deltaY < 0) {
-                focus.add(ortho);
-            } else {
-                focus.sub(ortho);
-            }
+            const delta = ortho.clone().multiplyScalar(Math.sign(event.deltaY));
+            focus.add(delta);
+            camera.position.add(delta);
+
+            event.preventDefault();
+            event.stopPropagation();
         // }
     });
 
@@ -422,43 +521,50 @@ async function start() {
     window.addEventListener("blur", clearHeld);
 }
 
-class GridHelper extends THREE.Mesh {
-	constructor(size = 10, divisions = 10, color1 = new THREE.Color("white"), texture) {
-		const halfSize = size / 2;
+function makeGridGeometry(cells) {
+    const vertices = [];
+    const colors = [];
+    const uvs = [];
+    const index = [];
 
-		const vertices = [];
-        const colors = [];
-        const uvs = [];
-        const index = [];
+    const center = Math.floor(cells * .5);
+    const origin = center;
+    
+    for (let z = 0; z <= cells; ++z) {
+        for (let x = 0; x <= cells; ++x) {
+            const dx = Math.abs(x - origin - .5);
+            const dz = Math.abs(z - origin - .5);
+            const d = Math.sqrt(dx*dx + dz*dz);
 
-        for (let z = 0; z < divisions; ++z) {
-            for (let x = 0; x < divisions; ++x) {
-                const dx = Math.abs(x - halfSize);
-                const dz = Math.abs(z - halfSize);
-                const d = Math.sqrt(dx*dx + dz*dz);
+            vertices.push(x - origin, 0, z - origin);
+            colors.push(1, 1, 1, 1 - Math.min(1, d / center));
+            uvs.push(z % 2, x % 2);
 
-                vertices.push(x - halfSize, 0, z - halfSize);
-                colors.push(color1.r, color1.g, color1.b, 1 - Math.min(1, d / (halfSize - 1)));
-                uvs.push(z % 2, x % 2);
+            if (z > 0 && x > 0) {
+                const v0 = (z - 1) * (cells+1) + x - 1;
+                const v1 = (z - 1) * (cells+1) + x;
+                const v2 = z * (cells+1) + x;
+                const v3 = z * (cells+1) + x - 1;
 
-                if (z > 0 && x > 0) {
-                    const v0 = (z - 1) * divisions + x - 1;
-                    const v1 = (z - 1) * divisions + x;
-                    const v2 = z * divisions + x;
-                    const v3 = z * divisions + x - 1;
-
-                    index.push(v3, v2, v1);
-                    index.push(v3, v1, v0);
-                }
+                index.push(v3, v2, v1);
+                index.push(v3, v1, v0);
             }
         }
+    }
 
-		const geometry = new THREE.BufferGeometry();
-		geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-		geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
-		geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-        geometry.setIndex(index);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(index);
 
+    return geometry;
+}
+
+class GridHelper extends THREE.Mesh {
+	constructor(size = 10, cells = 10, color1 = new THREE.Color("white"), texture) {
+		
+        const geometry = makeGridGeometry(cells);
 		const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, map: texture, side: THREE.DoubleSide });
 
 		super(geometry, material);
