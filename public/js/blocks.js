@@ -458,17 +458,12 @@ class BlockMap extends THREE.Object3D {
             const position = new THREE.Vector3();
 
             renderer.getPositionAt(intersect.instanceId, position);
-            const rot = renderer.getRotationAt(intersect.instanceId);
-            const quat = S4Quats[rot];
-            
-            if (bounds && !bounds.containsPoint(position)) continue;
 
-            //const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(first.) < 0.1);
+            if (bounds && !bounds.containsPoint(position)) continue;
 
             return {
                 intersection: intersect,
                 position,
-                normal: intersect.face.normal.clone().applyQuaternion(quat),
             }
         }
     }

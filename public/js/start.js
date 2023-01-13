@@ -167,11 +167,10 @@ async function start() {
     // const grid = new THREE.Mesh(gridGeo, gridMat);
     // scene.add(grid2);
 
-    const grid = new GridHelper(17, 17);
+    const grid = new GridHelper(17, cellTex);
     grid.name = "Edit Plane";
     grid.geometry.translate(-.5, 0, -.5);
     grid.geometry.rotateX(-Math.PI * .5);
-    grid.material.map = cellTex;
     scene.add(grid);
 
     const max = 6;
@@ -276,13 +275,13 @@ async function start() {
         level.bounds.min.set(-Infinity, -Infinity, -Infinity);
         level.bounds.max.set( Infinity,  Infinity,  Infinity);
 
-        function clip(primary, inclusive=true) {
+        function clip(primary) {
             level.bounds.min.set(-Infinity, -Infinity, -Infinity);
             level.bounds.max.set( Infinity,  Infinity,  Infinity);
 
             if (editState.layerMode) {
                 const sign = Math.sign(ortho.x + ortho.y + ortho.z);
-                const adjust = (sign > 0 ? 0 : 1) //- (inclusive ? 0 : sign);
+                const adjust = sign > 0 ? 0 : 1;
                 if (sign > 0) primary = !primary;
 
                 const bound = primary ? level.bounds.max : level.bounds.min;
@@ -310,7 +309,7 @@ async function start() {
 
         editState.looking = held["MouseRight"] || held["MouseMiddle"];
 
-        const type = "cube";//types[THREE.MathUtils.randInt(0, types.length-1)];
+        const type = types[THREE.MathUtils.randInt(0, types.length-1)];
 
         if (editState.looking) {
             renderer.domElement.requestPointerLock();
@@ -318,12 +317,24 @@ async function start() {
             document.exitPointerLock();
         }
 
-        if (held["MouseMiddle"] && dragInfo.focus) {
+        if (held["MouseMiddle"] && dragInfo.focus) {;
             const delta = pointer.clone().sub(dragInfo.mouse);
-            const h = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), delta.x * .0075);
-            camera.position.copy(dragInfo.camera).applyQuaternion(h).add(dragInfo.focus);
-            camera.lookAt(dragInfo.focus);
-            //camera.applyQuaternion(h.invert());
+            // const h = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), delta.x * .0075);
+            // camera.position.copy(dragInfo.camera).applyQuaternion(h).add(dragInfo.focus);
+            // camera.lookAt(dragInfo.focus);
+            // //camera.applyQuaternion(h.invert());
+
+            camera.matrixAutoUpdate = false;
+            camera.matrix.identity();
+            camera.applyMatrix4(dragInfo.camera2);
+            camera.matrixAutoUpdate = true;
+
+            const quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), delta.x * .0075);
+            camera.applyQuaternion(quat);
+
+            camera.position.sub(dragInfo.focus);
+            camera.position.applyQuaternion(quat);
+            camera.position.add(dragInfo.focus);
         } else {
             dragInfo.focus = undefined;
         }
@@ -354,8 +365,15 @@ async function start() {
 
                 if (pressed["MouseMiddle"] && !dragInfo.focus) {
                     dragInfo.focus = point.clone().round();
+
+                    // const plane = new THREE.Plane();
+                    // plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), cursor.position);
+                    // ray.intersectPlane(plane, dragInfo.focus);
+
                     dragInfo.mouse = pointer.clone();
                     dragInfo.camera = camera.position.clone().sub(dragInfo.focus);
+
+                    dragInfo.camera2 = camera.matrix.clone();
                 }
             }
 
@@ -381,12 +399,13 @@ async function start() {
                 cursor.position.copy(block.position);
                 //cursor.position.add(block.normal);
 
-                const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(block.normal) < 0.1);
+                const cubeNormal = getCubeOrtho(raycaster.ray, block.position); 
+                const orthoIndex = orthoNormals.findIndex((o) => o.distanceToSquared(cubeNormal) < 0.1);
                 const quat = orthoOrients[orthoIndex];
                 cursor.rotation.setFromQuaternion(quat);
 
                 if (pressed["MouseLeft"] && !held["Control"]) {
-                    const pos = cursor.position.clone().add(block.normal);
+                    const pos = cursor.position.clone().add(cubeNormal);
                     level.blockMap.setBlockAt(pos, type, 0, 0);
                 }
                 
@@ -402,9 +421,41 @@ async function start() {
                 }
 
                 if (pressed["MouseMiddle"] && !dragInfo.focus) {
+                    const ray = new THREE.Ray(camera.position, forward);
                     dragInfo.focus = cursor.position.clone().round();
+
+                    const plane = new THREE.Plane();
+                    plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), cursor.position);
+                    ray.intersectPlane(plane, dragInfo.focus);
+
                     dragInfo.mouse = pointer.clone();
                     dragInfo.camera = camera.position.clone().sub(dragInfo.focus);
+                }
+
+                const test2 = [
+                    [0, 2],
+                    [1, 4],
+                    [2, 0],
+                    [3, 5],
+                    [4, 1],
+                    [5, 3],
+                ];
+                const [q, e] = test2[orthoIndex];
+                const mesh = block.intersection.object;
+                const instanceId = block.intersection.instanceId;
+                
+                if (pressed["q"]) {
+                    const prev = mesh.getRotationAt(instanceId);
+                    const next = S4Ops[q][prev];
+                    mesh.setRotationAt(instanceId, next); 
+                    mesh.update();
+                }
+
+                if (pressed["e"]) {
+                    const prev = mesh.getRotationAt(instanceId);
+                    const next = S4Ops[e][prev];
+                    mesh.setRotationAt(instanceId, next); 
+                    mesh.update();
                 }
             }
         }
@@ -561,8 +612,35 @@ function makeGridGeometry(cells) {
     return geometry;
 }
 
+/**
+ * @param {THREE.Ray} ray
+ * @param {THREE.Vector3} position
+ */
+function getCubeOrtho(ray, position) {
+    const box = new THREE.Box3().expandByPoint(position).expandByScalar(.5);
+    const point = ray.intersectBox(box, new THREE.Vector3()).sub(position);
+
+    const max = Math.max(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z));
+
+    if (Math.abs(point.x) >= max) {
+        point.x = Math.sign(point.x);
+        point.y = 0;
+        point.z = 0;
+    } else if (Math.abs(point.y) >= max) {
+        point.x = 0;
+        point.y = Math.sign(point.y);
+        point.z = 0;
+    } else if (Math.abs(point.z) >= max) {
+        point.x = 0;
+        point.y = 0;
+        point.z = Math.sign(point.z);
+    }
+
+    return point;
+}
+
 class GridHelper extends THREE.Mesh {
-	constructor(size = 10, cells = 10, color1 = new THREE.Color("white"), texture) {
+	constructor(cells, texture) {
 		
         const geometry = makeGridGeometry(cells);
 		const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, map: texture, side: THREE.DoubleSide });
