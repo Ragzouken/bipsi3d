@@ -1,74 +1,3 @@
-const orthoNormals = [
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(0, 0, 1),
-    new THREE.Vector3(0, -1, 0),
-    new THREE.Vector3(1, 0, 0),
-    new THREE.Vector3(0, 0, -1),
-    new THREE.Vector3(-1, 0, 0),
-];
-
-const orthoOrients = [];
-orthoOrients.length = 6;
-
-/** @type {THREE.Matrix3[]} */
-const S4_TRANSFORM_LOOKUP = [];
-
-/** @type {THREE.Quaternion[]} */
-const S4Quats = [];
-
-orthoNormals.forEach((up, i) => {
-    orthoNormals.forEach((forward) => {
-        if (Math.abs(up.dot(forward)) > .1) return;
-        const left = up.clone().cross(forward);
-        const matrix = new THREE.Matrix4().makeBasis(left, up, forward);
-        S4_TRANSFORM_LOOKUP.push(new THREE.Matrix3().setFromMatrix4(matrix));
-
-        const q = new THREE.Quaternion().setFromRotationMatrix(matrix).normalize();
-        S4Quats.push(q);
-        orthoOrients[i] = q;
-    });
-});
-
-/**
- * @param {THREE.Vector3} normal
- * @param {number} threshold
- * @returns {THREE.Vector3}
- */
-function nearestOrthoNormal(normal, threshold=-Infinity) {
-    let max = threshold;
-    let ortho = undefined;
-
-    orthoNormals.forEach((o) => {
-        if (o.dot(normal) > max) {
-            max = o.dot(normal);
-            ortho = o;
-        }
-    });
-
-    return ortho;
-}
-
-/**
- * @param {THREE.Quaternion} quaternion
- */
-function quaternionToS4(quaternion) {
-    return S4Quats.findIndex((o) => Math.abs(o.dot(quaternion)) >= 0.99);
-}
-
-const S4Ops = [];
-
-orthoNormals.forEach((axis) => {
-    const rotation = new THREE.Quaternion().setFromAxisAngle(axis, Math.PI / 2).normalize();
-    const rotationLookup = [];
-    S4Ops.push(rotationLookup);
-
-    S4Quats.forEach((prevOrientation) => {
-        const nextOrientation = rotation.clone().multiply(prevOrientation).normalize();
-        const nextOrientationIndex = quaternionToS4(nextOrientation);
-        rotationLookup.push(nextOrientationIndex);
-    });
-});
-
 const cube = {
     name: "cube",
 
@@ -451,7 +380,8 @@ class BlockMap extends THREE.Object3D {
      * @param {THREE.Box3} bounds
      */
     raycastBlocks(raycaster, bounds=undefined) {
-        const intersects = raycaster.intersectObject(this, true);
+        /** @type {THREE.Intersection<BlockShapeInstances>[]} */
+        const intersects = (raycaster.intersectObject(this, true));
 
         for (let intersect of intersects) {
             const renderer = /** @type {BlockShapeInstances} */ (intersect.object);
@@ -466,5 +396,17 @@ class BlockMap extends THREE.Object3D {
                 position,
             }
         }
+    }
+
+    /**
+     * @param {THREE.Intersection<BlockShapeInstances>} intersection
+     */
+    getEnhancedIntersection(intersection) {
+        const renderer = intersection.object;
+        const position = new THREE.Vector3();
+
+        renderer.getPositionAt(intersection.instanceId, position);
+
+        return { position };
     }
 }
