@@ -1,6 +1,13 @@
 window.addEventListener("DOMContentLoaded", start);
 
+const UNBOUNDED = new THREE.Box3();
+UNBOUNDED.min.set(-Infinity, -Infinity, -Infinity);
+UNBOUNDED.max.set( Infinity,  Infinity,  Infinity);
+Object.freeze(UNBOUNDED.min);
+Object.freeze(UNBOUNDED.max);
+
 const designCount = 16;
+
 
 class RoomRendering extends THREE.Object3D {
     /**
@@ -38,10 +45,7 @@ class RoomRendering extends THREE.Object3D {
         this.add(this.blockMap);
         this.add(this.billboards);
 
-        this.bounds = new THREE.Box3(
-            new THREE.Vector3(-Infinity, -Infinity, -Infinity),
-            new THREE.Vector3( Infinity,  Infinity,  Infinity),
-        );
+        this.bounds = new THREE.Box3().copy(UNBOUNDED);
     }
 
     update() {
@@ -137,22 +141,17 @@ async function start() {
         return texture;
     }
 
+    async function loadTexture(url) {
+        return makeTexture(await loadImage(url));
+    }
+
     // tileset & designs
-    const cursorImage = await loadImage("./assets/cursor.png");
-    const cursorTex = makeTexture(cursorImage);
-    const nubImage = await loadImage("./assets/nub.png");
-    const nubTex = makeTexture(nubImage);
-    const delNubImage = await loadImage("./assets/delnub.png");
-    const delNubTex = makeTexture(delNubImage);
-    const pickNubImage = await loadImage("./assets/pick.png");
-    const pickNubTex = makeTexture(pickNubImage);
-    const cellImage = await loadImage("./assets/cell.png");
-    const cellTex = makeTexture(cellImage);
-    cellTex.wrapS = THREE.RepeatWrapping;
-    cellTex.wrapT = THREE.RepeatWrapping;
-    // cellTex.repeat.set(16, 16);
-    const tilesImage = await loadImage("./assets/test-tiles.png");//"./assets/level1.png");
-    const tilesTex = makeTexture(tilesImage);
+    const cursorTex = await loadTexture("./assets/cursor.png");
+    const nubTex = await loadTexture("./assets/nub.png");
+    const delNubTex = await loadTexture("./assets/delnub.png");
+    const pickNubTex = await loadTexture("./assets/pick.png");
+    const cellTex = await loadTexture("./assets/cell.png");
+    const tilesTex = await loadTexture("./assets/test-tiles.png");//"./assets/level1.png");
 
     // level
     const level = new RoomRendering(tilesTex);
@@ -253,17 +252,15 @@ async function start() {
         const vert = Math.abs(DIRECTIONS_3D.UP.dot(forward)) > .3;
         
         if (vert) ortho = forward.y > 0 ? DIRECTIONS_3D.UP : DIRECTIONS_3D.DOWN;
-        else ortho = nearestOrthoNormal(forward, ortho ? .75 : 0) ?? ortho;
+        else ortho = getNearestOrtho(forward, ortho ? .75 : 0) ?? ortho;
 
         if (pressed["="]) focus.add(ortho);
         if (pressed["-"]) focus.sub(ortho);
 
-        level.bounds.min.set(-Infinity, -Infinity, -Infinity);
-        level.bounds.max.set( Infinity,  Infinity,  Infinity);
+        level.bounds.copy(UNBOUNDED);
 
         function clip(primary) {
-            level.bounds.min.set(-Infinity, -Infinity, -Infinity);
-            level.bounds.max.set( Infinity,  Infinity,  Infinity);
+            level.bounds.copy(UNBOUNDED);
 
             if (editState.layerMode) {
                 const sign = Math.sign(ortho.x + ortho.y + ortho.z);
@@ -652,22 +649,7 @@ function getCubeOrtho(ray, position) {
         point.z = Math.sign(point.z);
     }
 
+    console.log(point, getNearestOrtho(point));
+
     return point;
-}
-
-class GridHelper extends THREE.Mesh {
-	constructor(cells, texture) {
-		
-        
-
-		super(geometry, material);
-
-		this.type = 'GridHelper';
-
-	}
-
-	dispose() {
-		this.geometry.dispose();
-		this.material.dispose();
-	}
 }

@@ -36,9 +36,10 @@ function getOrthoIndex(ortho) {
 
 /**
  * @param {THREE.Vector3} vector
+ * @param {number} threshold
  */
-function getNearestOrtho(vector) {
-    let dotMax = -Infinity;
+function getNearestOrtho(vector, threshold=-Infinity) {
+    let dotMax = threshold;
     let orthoMax = orthoNormals[0];
 
     for (const ortho of orthoNormals) {
@@ -73,25 +74,6 @@ orthoNormals.forEach((up, i) => {
         orthoOrients[i] = q;
     });
 });
-
-/**
- * @param {THREE.Vector3} normal
- * @param {number} threshold
- * @returns {THREE.Vector3}
- */
-function nearestOrthoNormal(normal, threshold=-Infinity) {
-    let max = threshold;
-    let ortho = undefined;
-
-    orthoNormals.forEach((o) => {
-        if (o.dot(normal) > max) {
-            max = o.dot(normal);
-            ortho = o;
-        }
-    });
-
-    return ortho;
-}
 
 /**
  * @param {THREE.Quaternion} quaternion
