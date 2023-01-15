@@ -29,12 +29,15 @@ class RoomRendering extends THREE.Object3D {
 
         this.texture = texture;
         this.tilesetWidth = 256;
-        this.tilesetCols = 32;
+        this.tilesetCols = 16;
 
         this.designs = new BlockDesignData(8, 4, designCount);
         for (let i = 0; i < designCount; ++i) this.designs.setDesignAt(i, boxDesign(THREE.MathUtils.randInt(1, 16*16-1), THREE.MathUtils.randInt(1, 16*16-1)));
 
         this.designs.setDesignAt(0, boxDesign(1, 2));
+        this.designs.setDesignAt(1, boxDesign(3, 4));
+        this.designs.setDesignAt(2, boxDesign(5, 6));
+        this.designs.setDesignAt(3, boxDesign(7, 8));
 
         this.blockMaterial = new BlocksMaterial(this.texture, this.designs);
         this.spriteMaterial = new SpritesMaterial(this.texture);
@@ -220,62 +223,78 @@ async function start() {
 
     scene.add(cursor);
     const plane = new THREE.Plane();
-    plane.normal.set(0, -1, 0);
+    plane.normal.copy(DIRECTIONS_3D.DOWN);
     
     const focusTarget = new THREE.Vector3(0, 0.5, 0);
     focusTarget.copy(cameraFocus.position);
 
     const focus = new THREE.Vector3(0, 0, 0);
-    let ortho = new THREE.Vector3();
+    let gridOrtho = DIRECTIONS_3D.UP;
 
     const dragInfo = {};
 
-    const castCube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
-    castCube.geometry.translate(-.5, -.5, -.5);
-
     let type = "cube";
     let rotation = 0;
+    let design = 0;
+
+    function clip(primary) {
+        level.bounds.copy(UNBOUNDED);
+
+        if (editState.layerMode) {
+            const sign = Math.sign(gridOrtho.x + gridOrtho.y + gridOrtho.z);
+            const adjust = sign > 0 ? 0 : 1;
+            if (sign > 0) primary = !primary;
+
+            const bound = primary ? level.bounds.max : level.bounds.min;
+
+            if (gridOrtho.x !== 0) bound.x = focus.x + adjust;
+            if (gridOrtho.y !== 0) bound.y = focus.y + adjust;
+            if (gridOrtho.z !== 0) bound.z = focus.z + adjust;
+        } 
+        
+        level.update();
+    }
+    
+    function setGrid(position, ortho) {
+        grid.position.copy(position);
+        grid.position.addScaledVector(ortho, .49);
+        grid.lookAt(position);
+    }
+
+    function getGridOrtho() {
+        return getNearestOrtho(DIRECTIONS_3D.BACKWARD.clone().applyQuaternion(grid.quaternion));
+    }
+
+    setGrid(new THREE.Vector3(0, 0, 0), DIRECTIONS_3D.DOWN);
 
     level.bounds.max.y = 4;
     function animate(dt) {
-        if (pressed["l"]) {
+        if (pressed["g"]) {
             editState.layerMode = !editState.layerMode;
         }
+
+        editState.layerMode = !held["g"]
 
         const delta = focus.clone().sub(cameraFocus.position);
         cameraFocus.position.add(delta.multiplyScalar(.25+dt));
         cameraFocus.updateMatrixWorld();
 
-        const forward = camera.getWorldDirection(new THREE.Vector3());
-        const right = forward.clone().set(1, 0, 0).applyQuaternion(camera.quaternion);
+        const cameraForward = camera.getWorldDirection(new THREE.Vector3());
+        const right = DIRECTIONS_3D.RIGHT.clone().applyQuaternion(camera.quaternion);
 
-        const vert = Math.abs(DIRECTIONS_3D.UP.dot(forward)) > .3;
-        
-        if (vert) ortho = forward.y > 0 ? DIRECTIONS_3D.UP : DIRECTIONS_3D.DOWN;
-        else ortho = getNearestOrtho(forward, ortho ? .75 : 0) ?? ortho;
+        gridOrtho = getGridOrtho();
 
-        if (pressed["="]) focus.add(ortho);
-        if (pressed["-"]) focus.sub(ortho);
+        if (gridOrtho.dot(cameraForward) < 0) {
+            console.log("hello");
+            setGrid(focus, gridOrtho.clone().multiplyScalar(-1));
+
+            gridOrtho = getGridOrtho();
+        }
+
+        if (pressed["="]) stepLayer(1);
+        if (pressed["-"]) stepLayer(-1);
 
         level.bounds.copy(UNBOUNDED);
-
-        function clip(primary) {
-            level.bounds.copy(UNBOUNDED);
-
-            if (editState.layerMode) {
-                const sign = Math.sign(ortho.x + ortho.y + ortho.z);
-                const adjust = sign > 0 ? 0 : 1;
-                if (sign > 0) primary = !primary;
-
-                const bound = primary ? level.bounds.max : level.bounds.min;
-
-                if (ortho.x !== 0) bound.x = focus.x + adjust;
-                if (ortho.y !== 0) bound.y = focus.y + adjust;
-                if (ortho.z !== 0) bound.z = focus.z + adjust;
-            } 
-            
-            level.update();
-        }
 
         compMesh.visible = editState.layerMode;
 
@@ -295,6 +314,11 @@ async function start() {
         if (pressed["3"]) type = types[2];
         if (pressed["4"]) type = types[3];
         if (pressed["5"]) type = types[4];
+
+        if (pressed["7"]) design = 0;
+        if (pressed["8"]) design = 1;
+        if (pressed["9"]) design = 2;
+        if (pressed["0"]) design = 3;
 
         if (editState.looking) {
             renderer.domElement.requestPointerLock();
@@ -321,36 +345,32 @@ async function start() {
         }
 
         if (editState.layerMode) {
-            grid.position.copy(focus);
-            grid.position.add(ortho.clone().multiplyScalar(.49));
-            grid.lookAt(focus);
-
-            plane.setFromNormalAndCoplanarPoint(ortho, grid.position);
+            plane.setFromNormalAndCoplanarPoint(gridOrtho, grid.position);
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
             
             grid.visible = true;
             if (editState.looking) {
-                const ray = new THREE.Ray(camera.position, forward);
-                const point = ray.intersectPlane(plane, new THREE.Vector3())?.sub(ortho.clone().multiplyScalar(.5)).round();
+                const ray = new THREE.Ray(camera.position, cameraForward);
+                const point = ray.intersectPlane(plane, new THREE.Vector3())?.sub(gridOrtho.clone().multiplyScalar(.5)).round();
                 if (point) {
-                    if (ortho.x === 0) grid.position.x = point.x; 
-                    if (ortho.y === 0) grid.position.y = point.y;
-                    if (ortho.z === 0) grid.position.z = point.z;
+                    if (gridOrtho.x === 0) grid.position.x = point.x; 
+                    if (gridOrtho.y === 0) grid.position.y = point.y;
+                    if (gridOrtho.z === 0) grid.position.z = point.z;
                 }
             }
 
-            if (point && point.distanceTo(focus) < 20) {
+            if (point && point.distanceTo(camera.position) < 25) {
                 cursor.visible = true;
-                cursor.position.copy(point).sub(ortho.clone().multiplyScalar(.5)).round();
+                cursor.position.copy(point).sub(gridOrtho.clone().multiplyScalar(.5)).round();
 
                 grid.visible = true;
                 if (!editState.looking) {
-                    if (ortho.x === 0) grid.position.x = cursor.position.x; 
-                    if (ortho.y === 0) grid.position.y = cursor.position.y;
-                    if (ortho.z === 0) grid.position.z = cursor.position.z;
+                    if (gridOrtho.x === 0) grid.position.x = cursor.position.x; 
+                    if (gridOrtho.y === 0) grid.position.y = cursor.position.y;
+                    if (gridOrtho.z === 0) grid.position.z = cursor.position.z;
                 }
 
-                const ray = new THREE.Ray(camera.position, forward);
+                const ray = new THREE.Ray(camera.position, cameraForward);
                 const d = ray.intersectPlane(plane, new THREE.Vector3())?.distanceTo(camera.position) ?? 8;
                 scene.fog.near = d;
                 scene.fog.far = d + 16;
@@ -391,8 +411,7 @@ async function start() {
 
             cursor.visible = cursor.visible && !editState.looking;
             if (cursor.visible && held["MouseLeft"]) {
-                level.blockMap.setBlockAt(cursor.position, type, rotation, THREE.MathUtils.randInt(0, 4));
-                focus.copy(cursor.position);
+                level.blockMap.setBlockAt(cursor.position, type, rotation, design);
             }
 
             if (cursor.visible && held["Control"]) {
@@ -404,7 +423,8 @@ async function start() {
                 }
             }
         } else if (!editState.looking) {
-            const [first] = raycaster.intersectObjects([level.blockMap, cube]);
+            const useCube = level.blockMap.getBlockAt(cursor.position) !== undefined;
+            const [first] = raycaster.intersectObjects(useCube ? [level.blockMap, cube] : [level.blockMap]);
 
             let position = undefined;
 
@@ -424,9 +444,13 @@ async function start() {
                 const quat = orthoOrients[orthoIndex];
                 cursor.rotation.setFromQuaternion(quat);
 
+                focus.copy(cursor.position);
+                setGrid(focus, cubeNormal.clone().multiplyScalar(-1));
+                //grid.visible = true;
+
                 if (pressed["MouseLeft"] && !held["Control"]) {
                     const pos = cursor.position.clone().add(cubeNormal);
-                    level.blockMap.setBlockAt(pos, type, 0, 0);
+                    level.blockMap.setBlockAt(pos, type, rotation, design);
                 }
                 
                 nub.visible = true;
@@ -470,7 +494,6 @@ async function start() {
             }
         }
 
-
         editState.looking = held["MouseRight"] || held["MouseMiddle"];
 
         if (pressed["o"]) {
@@ -478,8 +501,8 @@ async function start() {
         }
 
         //if (held["MouseRight"]) {
-            if (held["w"]) camera.position.addScaledVector(forward, dt * 7);
-            if (held["s"]) camera.position.addScaledVector(forward, dt * -7);
+            if (held["w"]) camera.position.addScaledVector(cameraForward, dt * 7);
+            if (held["s"]) camera.position.addScaledVector(cameraForward, dt * -7);
             if (held["a"]) camera.position.addScaledVector(right, dt * -7);
             if (held["d"]) camera.position.addScaledVector(right, dt *  7);
             if (held[" "]) camera.position.addScaledVector(DIRECTIONS_3D.UP, dt *  7);
@@ -568,11 +591,16 @@ async function start() {
         event.stopPropagation();
     });
 
+    function stepLayer(sign) {
+        const delta = gridOrtho.clone().multiplyScalar(sign);
+        focus.add(delta);
+        setGrid(focus, gridOrtho);
+        camera.position.add(delta);
+    }
+
     renderer.domElement.addEventListener("wheel", (event) => {
         // if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-            const delta = ortho.clone().multiplyScalar(Math.sign(event.deltaY));
-            focus.add(delta);
-            camera.position.add(delta);
+            stepLayer(Math.sign(event.deltaY));
 
             event.preventDefault();
             event.stopPropagation();
@@ -633,23 +661,5 @@ function getCubeOrtho(ray, position) {
 
     if (!point) return orthoNormals[0];
 
-    const max = Math.max(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z));
-
-    if (Math.abs(point.x) >= max) {
-        point.x = Math.sign(point.x);
-        point.y = 0;
-        point.z = 0;
-    } else if (Math.abs(point.y) >= max) {
-        point.x = 0;
-        point.y = Math.sign(point.y);
-        point.z = 0;
-    } else if (Math.abs(point.z) >= max) {
-        point.x = 0;
-        point.y = 0;
-        point.z = Math.sign(point.z);
-    }
-
-    console.log(point, getNearestOrtho(point));
-
-    return point;
+    return getNearestOrtho(point);
 }
