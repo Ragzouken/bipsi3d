@@ -14,6 +14,11 @@ const DIRECTIONS_2D = {
     LEFT:  Object.freeze(new THREE.Vector2(-1,  0)),
 };
 
+const ORTHO_HORIZONTAL = Object.freeze([
+    DIRECTIONS_3D.RIGHT, DIRECTIONS_3D.BACKWARD, 
+    DIRECTIONS_3D.LEFT, DIRECTIONS_3D.FORWARD,
+]);
+
 const orthoNormals = Object.freeze([
     DIRECTIONS_3D.UP, DIRECTIONS_3D.FORWARD, DIRECTIONS_3D.DOWN, 
     DIRECTIONS_3D.RIGHT, DIRECTIONS_3D.BACKWARD, DIRECTIONS_3D.LEFT,
@@ -43,6 +48,25 @@ function getNearestOrtho(vector, threshold=-Infinity) {
     let orthoMax = orthoNormals[0];
 
     for (const ortho of orthoNormals) {
+        const dot = ortho.dot(vector);
+        if (dot > dotMax) {
+            dotMax = dot;
+            orthoMax = ortho;
+        }
+    }
+
+    return orthoMax;
+}
+
+/**
+ * @param {THREE.Vector3} vector
+ * @param {number} threshold
+ */
+function getHorizontalOrtho(vector, threshold=-Infinity) {
+    let dotMax = threshold;
+    let orthoMax = orthoNormals[0];
+
+    for (const ortho of ORTHO_HORIZONTAL) {
         const dot = ortho.dot(vector);
         if (dot > dotMax) {
             dotMax = dot;
@@ -95,3 +119,13 @@ orthoNormals.forEach((axis) => {
         rotationLookup.push(nextOrientationIndex);
     });
 });
+
+const ORTHO_ROTATE_LOOKUP = Object.freeze([[0, 2], [1, 4], [2, 0], [3, 5], [4, 1], [5, 3]]);
+
+function orthoRotate(rotation, axisIndex, steps) {
+    const lookup = ORTHO_ROTATE_LOOKUP[axisIndex][steps < 0 ? 0 : 1];
+    for (let i = 0; i < Math.abs(steps); ++i) {
+        rotation = S4Ops[lookup][rotation];
+    }
+    return rotation;
+}

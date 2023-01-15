@@ -237,6 +237,25 @@ async function start() {
     let rotation = 0;
     let design = 0;
 
+    function getRotationOffset() {
+        const cameraForward = camera.getWorldDirection(new THREE.Vector3());
+        const t = ORTHO_HORIZONTAL.indexOf(DIRECTIONS_3D.FORWARD);
+        const f = ORTHO_HORIZONTAL.indexOf(getHorizontalOrtho(cameraForward));
+        const d = (t - f + 4) % 4;
+
+        return d;
+    }
+
+    function setBaseRotation(r) {
+        const d = getRotationOffset();
+        rotation = orthoRotate(r,  getOrthoIndex(DIRECTIONS_3D.UP), -d);
+    }
+
+    function getRelativeRotation() {
+        const d = getRotationOffset();
+        return orthoRotate(rotation, getOrthoIndex(DIRECTIONS_3D.UP), d);
+    }
+
     function clip(primary) {
         level.bounds.copy(UNBOUNDED);
 
@@ -284,8 +303,7 @@ async function start() {
 
         gridOrtho = getGridOrtho();
 
-        if (gridOrtho.dot(cameraForward) < 0) {
-            console.log("hello");
+        if (camera.position.clone().sub(grid.position).dot(gridOrtho) > 0) {
             setGrid(focus, gridOrtho.clone().multiplyScalar(-1));
 
             gridOrtho = getGridOrtho();
@@ -382,35 +400,29 @@ async function start() {
                 }
 
                 const orthoIndex = getOrthoIndex(DIRECTIONS_3D.FORWARD.clone().applyQuaternion(grid.quaternion));
-                const test2 = [
-                    [0, 2],
-                    [1, 4],
-                    [2, 0],
-                    [3, 5],
-                    [4, 1],
-                    [5, 3],
-                ];
-                const [q, e] = test2[orthoIndex];
-    
+
                 if (pressed["q"]) {
                     const block = level.blockMap.getBlockAt(cursor.position);
                     if (block) {
-                        rotation = S4Ops[q][block.rotation];
+                        const rotation = orthoRotate(block.rotation, orthoIndex, -1);
                         level.blockMap.setBlockAt(cursor.position, block.type, rotation, block.design);
+                        setBaseRotation(rotation);
                     }
                 }
     
                 if (pressed["e"]) {
                     const block = level.blockMap.getBlockAt(cursor.position);
                     if (block) {
-                        rotation = S4Ops[e][block.rotation];
+                        const rotation = orthoRotate(block.rotation, orthoIndex, 1);
                         level.blockMap.setBlockAt(cursor.position, block.type, rotation, block.design);
+                        setBaseRotation(rotation);
                     }
                 }
             }
 
             cursor.visible = cursor.visible && !editState.looking;
             if (cursor.visible && held["MouseLeft"]) {
+                const rotation = getRelativeRotation();
                 level.blockMap.setBlockAt(cursor.position, type, rotation, design);
             }
 
@@ -470,26 +482,18 @@ async function start() {
                     dragInfo.camera2 = camera.matrix.clone();
                 }
 
-                const test2 = [
-                    [0, 2],
-                    [1, 4],
-                    [2, 0],
-                    [3, 5],
-                    [4, 1],
-                    [5, 3],
-                ];
-                const [q, e] = test2[orthoIndex];
-
                 if (pressed["q"]) {
                     const block = level.blockMap.getBlockAt(position);
-                    rotation = S4Ops[q][block.rotation];
+                    const rotation = orthoRotate(block.rotation, orthoIndex, -1);
                     level.blockMap.setBlockAt(position, block.type, rotation, block.design);
+                    setBaseRotation(rotation);
                 }
 
                 if (pressed["e"]) {
                     const block = level.blockMap.getBlockAt(position);
-                    rotation = S4Ops[e][block.rotation];
+                    const rotation = orthoRotate(block.rotation, orthoIndex, 1);
                     level.blockMap.setBlockAt(position, block.type, rotation, block.design);
+                    setBaseRotation(rotation);
                 }
             }
         }
