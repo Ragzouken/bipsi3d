@@ -308,7 +308,9 @@ async function start() {
             editState.layerMode = !editState.layerMode;
         }
 
-        editState.layerMode = !held["g"]
+        let undoPreview = () => {};
+
+        //editState.layerMode = !held["g"]
 
         const delta = focus.clone().sub(cameraFocus.position).multiplyScalar(.25+dt);
         cameraFocus.position.add(delta);
@@ -388,6 +390,7 @@ async function start() {
         const pick = held["Alt"];
         const del = !pick && held["Control"];
         const put = !pick && !del;
+        const click = pressed["MouseLeft"];
 
         if (editState.layerMode) {
             plane.setFromNormalAndCoplanarPoint(gridOrtho, grid.position);
@@ -424,6 +427,7 @@ async function start() {
                     dragInfo.focus = point.clone().round();
                     dragInfo.mouse = pointer.clone();
                     dragInfo.camera2 = camera.matrix.clone();
+                    dragInfo.norm = 1 - Math.abs(getNormalisePointer().x);
                 }
 
                 const orthoIndex = getOrthoIndex(DIRECTIONS_3D.FORWARD.clone().applyQuaternion(grid.quaternion));
@@ -434,6 +438,8 @@ async function start() {
                         const rotation = orthoRotate(block.rotation, orthoIndex, -1);
                         level.blockMap.setBlockAt(cursor.position, block.type, rotation, block.design);
                         setBaseRotation(rotation);
+                    } else {
+                        setBaseRotation(orthoRotate(getRelativeRotation(), orthoIndex, -1));
                     }
                 }
     
@@ -443,14 +449,25 @@ async function start() {
                         const rotation = orthoRotate(block.rotation, orthoIndex, 1);
                         level.blockMap.setBlockAt(cursor.position, block.type, rotation, block.design);
                         setBaseRotation(rotation);
+                    } else {
+                        setBaseRotation(orthoRotate(getRelativeRotation(), orthoIndex, 1));
                     }
                 }
             }
 
             cursor.visible = cursor.visible && !editState.looking;
-            if (cursor.visible && put && held["MouseLeft"]) {
+            if (cursor.visible && put) {
                 const rotation = getRelativeRotation();
+                const pos = cursor.position;
+                const prev = level.blockMap.getBlockAt(pos);
                 level.blockMap.setBlockAt(cursor.position, type, rotation, design);
+                if (held["MouseLeft"]) {
+
+                } else if (prev) {
+                    undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
+                } else {
+                    undoPreview = () => level.blockMap.delBlockAt(pos);
+                }
             } else if (cursor.visible && del) {
                 delNub.visible = true;
                 nub.visible = false;
@@ -500,10 +517,19 @@ async function start() {
 
                 nub.visible = put;
 
-                if (cursor.visible && put && pressed["MouseLeft"]) {
+                if (cursor.visible && put) {
                     const rotation = getRelativeRotation();
                     const pos = cursor.position.clone().add(cubeNormal);
+                    const prev = level.blockMap.getBlockAt(pos);
                     level.blockMap.setBlockAt(pos, type, rotation, design);
+
+                    if (pressed["MouseLeft"]) {
+
+                    } else if (prev) {
+                        undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
+                    } else {
+                        undoPreview = () => level.blockMap.delBlockAt(pos);
+                    }
                 } else if (cursor.visible && del) {
                     delNub.visible = true;
                     nub.visible = false;
@@ -591,6 +617,8 @@ async function start() {
         stats.update();
         pressed = {};
         released = {};
+
+        undoPreview();
     };
 
     function update() {
