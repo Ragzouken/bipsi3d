@@ -61,16 +61,28 @@
     <div id="info">
       <ul>
         <li>look: right-click + drag</li>
-        <li>move: WASD/shift/space</li>
+        <li>fly: WASD/shift/space</li>
         <li>orbit: middle-click + drag</li>
         <li>place cube: left click</li>
         <li>remove cube: ctrl + left click</li>
         <li>rotate cube: hover + q/e</li>
-        <li>change block shape: 1/2/3/4/5</li>
         <li>change block design: 7/8/9/0</li>
         <li>toggle free place / grid: g</li>
         <li>push/pull layer: mousewheel and +/-</li>
       </ul>
+      <div>
+        <label><img src="assets/cube.png">1<input type="radio" name="shape" value="cube"></label>
+        <label><img src="assets/ramp.png">2<input type="radio" name="shape" value="ramp"></label>
+        <label><img src="assets/slab.png">3<input type="radio" name="shape" value="slab"></label>
+        <label><img src="assets/wedge-b.png">4<input type="radio" name="shape" value="wedgeBody"></label>
+        <label><img src="assets/wedge-h.png">5<input type="radio" name="shape" value="wedgeHead"></label>
+      </div>
+      <!-- <div>
+        <label>7<input type="radio" name="design" value="0"></label>
+        <label>8<input type="radio" name="design" value="1"></label>
+        <label>9<input type="radio" name="design" value="2"></label>
+        <label>0<input type="radio" name="design" value="3"></label>
+      </div> -->
     </div>
     <section id="room-render"></section>
   </main>

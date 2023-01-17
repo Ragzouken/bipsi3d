@@ -20,11 +20,11 @@ class RoomRendering extends THREE.Object3D {
         this.frame = 0;
 
         const geometries = {
+            cube: makeGeometry(cube),
             ramp: makeGeometry(ramp),
             slab: makeGeometry(slab),
-            cube: makeGeometry(cube),
-            wedgeHead: makeGeometry(wedgeHead),
             wedgeBody: makeGeometry(wedgeBody),
+            wedgeHead: makeGeometry(wedgeHead),
         };
 
         this.texture = texture;
@@ -239,6 +239,12 @@ async function start() {
     let type = "cube";
     let rotation = 0;
     let design = 0;
+
+    ALL(`input[name="shape"]`).forEach((input) => {
+        input.addEventListener("change", (event) => {
+            if (input.checked) type = input.value;
+        });
+    });
 
     function getRotationOffset() {
         const cameraForward = camera.getWorldDirection(new THREE.Vector3());
@@ -619,6 +625,8 @@ async function start() {
         released = {};
 
         undoPreview();
+
+        ONE(`input[name="shape"][value="${type}"]`).click();
     };
 
     function update() {
@@ -699,6 +707,10 @@ async function start() {
 
     window.addEventListener("contextmenu", clearHeld);
     window.addEventListener("blur", clearHeld);
+
+    ONE("#info").addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+    });
 }
 
 function makeGridGeometry(cells) {
