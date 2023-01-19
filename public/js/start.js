@@ -82,6 +82,7 @@ async function start() {
 
     const editState = {
         layerMode: true,
+        gridVertical: false,
         looking: false,
     };
 
@@ -156,19 +157,20 @@ async function start() {
     const nubTex = await loadTexture("./assets/nub.png");
     const delNubTex = await loadTexture("./assets/delnub.png");
     const pickNubTex = await loadTexture("./assets/pick.png");
-    const cellTex = await loadTexture("./assets/cell.png");
+    const cellTex = await loadTexture("./assets/cell2.png");
     const tilesTex = await loadTexture("./assets/test-tiles.png");//"./assets/level1.png");
 
     // level
     const level = new RoomRendering(tilesTex);
     scene.add(level);
 
-    const gridGeo = makeGridGeometry(17);
+    const gridGeo = makeGridGeometry(13);
     const gridMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, map: cellTex, side: THREE.DoubleSide });
     const grid = new THREE.Mesh(gridGeo, gridMat);
 
-    grid.name = "Edit Plane";
-    grid.geometry.translate(-.5, 0, -.5);
+    const gridAdjust = 1;//.5;
+    grid.name = "Back Grid";
+    grid.geometry.translate(-.5, -gridAdjust, -.5);
     grid.geometry.rotateX(-Math.PI * .5);
     scene.add(grid);
 
@@ -282,7 +284,7 @@ async function start() {
         
         level.update();
     }
-    
+
     function setGrid(position, ortho) {
         grid.position.copy(position);
         grid.position.addScaledVector(ortho, .49);
@@ -310,7 +312,7 @@ async function start() {
 
     level.bounds.max.y = 4;
     function animate(dt) {
-        if (pressed["g"]) {
+        if (pressed["l"]) {
             editState.layerMode = !editState.layerMode;
         }
 
@@ -388,7 +390,7 @@ async function start() {
             rotateAroundWorldAxis(camera, dragInfo.focus, yawAxis, delta.x * .0075);
 
             const pitchAxis = DIRECTIONS_3D.LEFT.clone().applyQuaternion(camera.quaternion);
-            rotateAroundWorldAxis(camera, dragInfo.focus, pitchAxis, delta.y * .005);
+            rotateAroundWorldAxis(camera, dragInfo.focus, pitchAxis, delta.y * -.005);
         } else {
             dragInfo.focus = undefined;
         }
@@ -399,9 +401,16 @@ async function start() {
         const click = pressed["MouseLeft"];
 
         if (editState.layerMode) {
-            plane.setFromNormalAndCoplanarPoint(gridOrtho, grid.position);
+            plane.setFromNormalAndCoplanarPoint(gridOrtho, grid.position.clone().addScaledVector(gridOrtho, -gridAdjust));
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
             
+            if (editState.gridVertical) {
+                const test = cameraForward.clone();
+                test.y = 0;
+                test.normalize();
+                setGrid(focus, getNearestOrtho(test));
+            }
+
             grid.visible = true;
             if (editState.looking) {
                 const ray = new THREE.Ray(camera.position, cameraForward);
@@ -415,13 +424,17 @@ async function start() {
 
             if (point && point.distanceTo(camera.position) < 25) {
                 cursor.visible = true;
-                cursor.position.copy(point).addScaledVector(gridOrtho, -.5).round();
+                cursor.position.copy(point).addScaledVector(gridOrtho, -.5+gridAdjust).round();
 
                 grid.visible = true;
                 if (!editState.looking) {
                     if (gridOrtho.x === 0) grid.position.x = cursor.position.x; 
                     if (gridOrtho.y === 0) grid.position.y = cursor.position.y;
                     if (gridOrtho.z === 0) grid.position.z = cursor.position.z;
+                }
+
+                if (pressed["g"]) {
+                    focus.copy(cursor.position);
                 }
 
                 const ray = new THREE.Ray(camera.position, cameraForward);
@@ -461,6 +474,11 @@ async function start() {
                 }
             }
 
+            if (pressed["g"]) {
+                editState.gridVertical = !editState.gridVertical; 
+                setGrid(focus, editState.gridVertical ? DIRECTIONS_3D.LEFT : DIRECTIONS_3D.UP);
+            }
+
             cursor.visible = cursor.visible && !editState.looking;
             if (cursor.visible && put) {
                 const rotation = getRelativeRotation();
@@ -468,7 +486,7 @@ async function start() {
                 const prev = level.blockMap.getBlockAt(pos);
                 level.blockMap.setBlockAt(cursor.position, type, rotation, design);
                 if (held["MouseLeft"]) {
-
+                    focus.copy(cursor.position);
                 } else if (prev) {
                     undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
                 } else {
@@ -518,7 +536,7 @@ async function start() {
                 cursor.rotation.setFromQuaternion(quat);
 
                 focus.copy(cursor.position);
-                setGrid(focus, cubeNormal.clone().multiplyScalar(-1));
+                setGrid(focus, getGridOrtho());
                 //grid.visible = true;
 
                 nub.visible = put;
@@ -527,14 +545,13 @@ async function start() {
                     const rotation = getRelativeRotation();
                     const pos = cursor.position.clone().add(cubeNormal);
                     const prev = level.blockMap.getBlockAt(pos);
-                    level.blockMap.setBlockAt(pos, type, rotation, design);
 
                     if (pressed["MouseLeft"]) {
-
+                        level.blockMap.setBlockAt(pos, type, rotation, design);
                     } else if (prev) {
-                        undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
+                        //undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
                     } else {
-                        undoPreview = () => level.blockMap.delBlockAt(pos);
+                        //undoPreview = () => level.blockMap.delBlockAt(pos);
                     }
                 } else if (cursor.visible && del) {
                     delNub.visible = true;
