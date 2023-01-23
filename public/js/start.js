@@ -5,6 +5,7 @@ UNBOUNDED.min.set(-Infinity, -Infinity, -Infinity);
 UNBOUNDED.max.set( Infinity,  Infinity,  Infinity);
 Object.freeze(UNBOUNDED.min);
 Object.freeze(UNBOUNDED.max);
+Object.freeze(UNBOUNDED);
 
 const designCount = 16;
 
@@ -168,7 +169,7 @@ async function start() {
     const gridMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, map: cellTex, side: THREE.DoubleSide });
     const grid = new THREE.Mesh(gridGeo, gridMat);
 
-    const gridAdjust = 1;//.5;
+    const gridAdjust = .5;
     grid.name = "Back Grid";
     grid.geometry.translate(-.5, -gridAdjust, -.5);
     grid.geometry.rotateX(-Math.PI * .5);
@@ -176,7 +177,7 @@ async function start() {
 
     const types = [...level.blockMap.meshes.keys()];
 
-    camera.position.set(2, 2, 2);
+    camera.position.set(2, 6, 2);
     camera.lookAt(new THREE.Vector3(0, 0, 0));
 
     //
@@ -228,19 +229,20 @@ async function start() {
 
     scene.add(cursor);
     const plane = new THREE.Plane();
-    plane.normal.copy(DIRECTIONS_3D.DOWN);
+    plane.normal.copy(Ortho3D.DOWN.vector);
     
     const focusTarget = new THREE.Vector3(0, 0.5, 0);
     focusTarget.copy(cameraFocus.position);
 
     const focus = new THREE.Vector3(0, 0, 0);
-    let gridOrtho = DIRECTIONS_3D.UP;
+    let gridOrtho = Ortho3D.UP;
 
     const dragInfo = {};
 
     let type = "cube";
-    let rotation = 0;
     let design = 0;
+
+    let baseRotation = S4.IDENTITY;
 
     ALL(`input[name="shape"]`).forEach((input) => {
         input.addEventListener("change", (event) => {
@@ -250,52 +252,56 @@ async function start() {
 
     function getRotationOffset() {
         const cameraForward = camera.getWorldDirection(new THREE.Vector3());
-        const t = ORTHO_HORIZONTAL.indexOf(DIRECTIONS_3D.FORWARD);
-        const f = ORTHO_HORIZONTAL.indexOf(getHorizontalOrtho(cameraForward));
-        const d = (t - f + 4) % 4;
+        const t = Ortho3D.HORIZONTAL.indexOf(Ortho3D.BACKWARD);
+        const f = Ortho3D.HORIZONTAL.indexOf(Ortho3D.fromNormalHorizontal(cameraForward));
+        const d = (f - t + 4) % 4;
 
         return d;
     }
 
-    function setBaseRotation(r) {
-        const d = getRotationOffset();
-        rotation = orthoRotate(r,  getOrthoIndex(DIRECTIONS_3D.UP), -d);
+    function setBaseRotation(rotation) {
+        baseRotation = rotation.rotated(Ortho3D.UP, -getRotationOffset());
     }
 
     function getRelativeRotation() {
-        const d = getRotationOffset();
-        return orthoRotate(rotation, getOrthoIndex(DIRECTIONS_3D.UP), d);
+        return baseRotation.rotated(Ortho3D.UP, getRotationOffset());
     }
 
     function clip(primary) {
         level.bounds.copy(UNBOUNDED);
 
         if (editState.layerMode) {
-            const sign = Math.sign(gridOrtho.x + gridOrtho.y + gridOrtho.z);
+            const o = gridOrtho.vector;
+            const sign = Math.sign(o.x + o.y + o.z);
             const adjust = sign > 0 ? 0 : 1;
             if (sign > 0) primary = !primary;
 
             const bound = primary ? level.bounds.max : level.bounds.min;
 
-            if (gridOrtho.x !== 0) bound.x = focus.x + adjust;
-            if (gridOrtho.y !== 0) bound.y = focus.y + adjust;
-            if (gridOrtho.z !== 0) bound.z = focus.z + adjust;
+            if (o.x !== 0) bound.x = focus.x + adjust;
+            if (o.y !== 0) bound.y = focus.y + adjust;
+            if (o.z !== 0) bound.z = focus.z + adjust;
         } 
         
         level.update();
     }
 
+    /**
+     * @param {THREE.Vector3} position
+     * @param {Ortho3D} ortho
+     */
     function setGrid(position, ortho) {
         grid.position.copy(position);
-        grid.position.addScaledVector(ortho, .49);
+        grid.position.addScaledVector(ortho.vector, .49);
         grid.lookAt(position);
     }
 
     function getGridOrtho() {
-        return getNearestOrtho(DIRECTIONS_3D.BACKWARD.clone().applyQuaternion(grid.quaternion));
+        const result = Ortho3D.fromNormal(Ortho3D.BACKWARD.vector.clone().applyQuaternion(grid.quaternion));
+        return result;
     }
 
-    setGrid(new THREE.Vector3(0, 0, 0), DIRECTIONS_3D.DOWN);
+    setGrid(new THREE.Vector3(0, 0, 0), Ortho3D.DOWN);
 
     const cameraForward = new THREE.Vector3();
     const cameraLeft = new THREE.Vector3();
@@ -336,9 +342,8 @@ async function start() {
 
         gridOrtho = getGridOrtho();
 
-        if (camera.position.clone().sub(grid.position).dot(gridOrtho) > 0) {
-            setGrid(focus, gridOrtho.clone().multiplyScalar(-1));
-
+        if (camera.position.clone().sub(grid.position).dot(gridOrtho.vector) > 0) {
+            setGrid(focus, gridOrtho.inverted());
             gridOrtho = getGridOrtho();
         }
 
@@ -386,10 +391,10 @@ async function start() {
             camera.applyMatrix4(dragInfo.camera2);
             camera.matrixAutoUpdate = true;
 
-            const yawAxis = DIRECTIONS_3D.UP;
+            const yawAxis = Ortho3D.UP.vector;
             rotateAroundWorldAxis(camera, dragInfo.focus, yawAxis, delta.x * .0075);
 
-            const pitchAxis = DIRECTIONS_3D.LEFT.clone().applyQuaternion(camera.quaternion);
+            const pitchAxis = Ortho3D.LEFT.vector.clone().applyQuaternion(camera.quaternion);
             rotateAroundWorldAxis(camera, dragInfo.focus, pitchAxis, delta.y * -.005);
         } else {
             dragInfo.focus = undefined;
@@ -401,36 +406,38 @@ async function start() {
         const click = pressed["MouseLeft"];
 
         if (editState.layerMode) {
-            plane.setFromNormalAndCoplanarPoint(gridOrtho, grid.position.clone().addScaledVector(gridOrtho, -gridAdjust));
+            plane.setFromNormalAndCoplanarPoint(gridOrtho.vector, grid.position.clone().addScaledVector(gridOrtho.vector, -gridAdjust));
             const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
             
             if (editState.gridVertical) {
                 const test = cameraForward.clone();
                 test.y = 0;
                 test.normalize();
-                setGrid(focus, getNearestOrtho(test));
+                setGrid(focus, Ortho3D.fromNormal(test));
             }
 
             grid.visible = true;
             if (editState.looking) {
+                const o = gridOrtho.vector;
                 const ray = new THREE.Ray(camera.position, cameraForward);
-                const point = ray.intersectPlane(plane, new THREE.Vector3())?.addScaledVector(gridOrtho, -.5).round();
+                const point = ray.intersectPlane(plane, new THREE.Vector3())?.addScaledVector(o, -.5).round();
                 if (point) {
-                    if (gridOrtho.x === 0) grid.position.x = point.x; 
-                    if (gridOrtho.y === 0) grid.position.y = point.y;
-                    if (gridOrtho.z === 0) grid.position.z = point.z;
+                    if (o.x === 0) grid.position.x = point.x; 
+                    if (o.y === 0) grid.position.y = point.y;
+                    if (o.z === 0) grid.position.z = point.z;
                 }
             }
 
             if (point && point.distanceTo(camera.position) < 25) {
+                const o = gridOrtho.vector;
                 cursor.visible = true;
-                cursor.position.copy(point).addScaledVector(gridOrtho, -.5+gridAdjust).round();
+                cursor.position.copy(point).addScaledVector(o, -.5+gridAdjust).round();
 
                 grid.visible = true;
                 if (!editState.looking) {
-                    if (gridOrtho.x === 0) grid.position.x = cursor.position.x; 
-                    if (gridOrtho.y === 0) grid.position.y = cursor.position.y;
-                    if (gridOrtho.z === 0) grid.position.z = cursor.position.z;
+                    if (o.x === 0) grid.position.x = cursor.position.x; 
+                    if (o.y === 0) grid.position.y = cursor.position.y;
+                    if (o.z === 0) grid.position.z = cursor.position.z;
                 }
 
                 if (pressed["g"]) {
@@ -449,34 +456,36 @@ async function start() {
                     dragInfo.norm = 1 - Math.abs(getNormalisePointer().x);
                 }
 
-                const orthoIndex = getOrthoIndex(DIRECTIONS_3D.FORWARD.clone().applyQuaternion(grid.quaternion));
+                const orthoIndex = gridOrtho.index;
 
                 if (pressed["q"]) {
                     const block = level.blockMap.getBlockAt(cursor.position);
                     if (block) {
-                        const rotation = orthoRotate(block.rotation, orthoIndex, -1);
-                        level.blockMap.setBlockAt(cursor.position, block.type, rotation, block.design);
+                        const rotation = S4.fromIndex(block.rotation).rotated(gridOrtho, 1);
+                        level.blockMap.setBlockAt(cursor.position, block.type, rotation.index, block.design);
                         setBaseRotation(rotation);
                     } else {
-                        setBaseRotation(orthoRotate(getRelativeRotation(), orthoIndex, -1));
+                        const rotation = getRelativeRotation().rotated(gridOrtho.index, 1);
+                        setBaseRotation(rotation);
                     }
                 }
     
                 if (pressed["e"]) {
                     const block = level.blockMap.getBlockAt(cursor.position);
                     if (block) {
-                        const rotation = orthoRotate(block.rotation, orthoIndex, 1);
-                        level.blockMap.setBlockAt(cursor.position, block.type, rotation, block.design);
+                        const rotation = S4.fromIndex(block.rotation).rotated(gridOrtho, -1);
+                        level.blockMap.setBlockAt(cursor.position, block.type, rotation.index, block.design);
                         setBaseRotation(rotation);
                     } else {
-                        setBaseRotation(orthoRotate(getRelativeRotation(), orthoIndex, 1));
+                        const rotation = getRelativeRotation().rotated(gridOrtho, -1);
+                        setBaseRotation(rotation);
                     }
                 }
             }
 
             if (pressed["g"]) {
                 editState.gridVertical = !editState.gridVertical; 
-                setGrid(focus, editState.gridVertical ? DIRECTIONS_3D.LEFT : DIRECTIONS_3D.UP);
+                setGrid(focus, editState.gridVertical ? Ortho3D.LEFT : Ortho3D.UP);
             }
 
             cursor.visible = cursor.visible && !editState.looking;
@@ -484,7 +493,7 @@ async function start() {
                 const rotation = getRelativeRotation();
                 const pos = cursor.position;
                 const prev = level.blockMap.getBlockAt(pos);
-                level.blockMap.setBlockAt(cursor.position, type, rotation, design);
+                level.blockMap.setBlockAt(cursor.position, type, rotation.index, design);
                 if (held["MouseLeft"]) {
                     focus.copy(cursor.position);
                 } else if (prev) {
@@ -529,11 +538,8 @@ async function start() {
                 cursor.visible = true;
                 cursor.position.copy(position);
 
-                const cubeNormal = getCubeOrtho(raycaster.ray, position); 
-                const orthoIndex = getOrthoIndex(cubeNormal);
-
-                const quat = orthoOrients[orthoIndex];
-                cursor.rotation.setFromQuaternion(quat);
+                const cubeOrtho = getCubeOrtho(raycaster.ray, position);
+                cursor.rotation.setFromQuaternion(cubeOrtho.s4.quaternion);
 
                 focus.copy(cursor.position);
                 setGrid(focus, getGridOrtho());
@@ -543,11 +549,11 @@ async function start() {
 
                 if (cursor.visible && put) {
                     const rotation = getRelativeRotation();
-                    const pos = cursor.position.clone().add(cubeNormal);
+                    const pos = cursor.position.clone().add(cubeOrtho.vector);
                     const prev = level.blockMap.getBlockAt(pos);
 
                     if (pressed["MouseLeft"]) {
-                        level.blockMap.setBlockAt(pos, type, rotation, design);
+                        level.blockMap.setBlockAt(pos, type, rotation.index, design);
                     } else if (prev) {
                         //undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
                     } else {
@@ -583,15 +589,15 @@ async function start() {
 
                 if (pressed["q"]) {
                     const block = level.blockMap.getBlockAt(position);
-                    const rotation = orthoRotate(block.rotation, orthoIndex, -1);
-                    level.blockMap.setBlockAt(position, block.type, rotation, block.design);
+                    const rotation = S4.fromIndex(block.rotation).rotated(cubeOrtho, 1);
+                    level.blockMap.setBlockAt(position, block.type, rotation.index, block.design);
                     setBaseRotation(rotation);
                 }
 
                 if (pressed["e"]) {
                     const block = level.blockMap.getBlockAt(position);
-                    const rotation = orthoRotate(block.rotation, orthoIndex, 1);
-                    level.blockMap.setBlockAt(position, block.type, rotation, block.design);
+                    const rotation = S4.fromIndex(block.rotation).rotated(cubeOrtho, -1);
+                    level.blockMap.setBlockAt(position, block.type, rotation.index, block.design);
                     setBaseRotation(rotation);
                 }
             }
@@ -608,8 +614,8 @@ async function start() {
             if (held["s"]) camera.position.addScaledVector(cameraForward, dt * -7);
             if (held["a"]) camera.position.addScaledVector(cameraRight, dt * -7);
             if (held["d"]) camera.position.addScaledVector(cameraRight, dt *  7);
-            if (held[" "]) camera.position.addScaledVector(DIRECTIONS_3D.UP, dt *  7);
-            if (held["Shift"]) camera.position.addScaledVector(DIRECTIONS_3D.UP, dt *  -7);
+            if (held[" "]) camera.position.addScaledVector(Ortho3D.UP.vector, dt *  7);
+            if (held["Shift"]) camera.position.addScaledVector(Ortho3D.UP.vector, dt *  -7);
         //} else if (editState.layerMode) {
             // const right2 = ortho.clone().cross(forward).normalize();
             // const forward2 = right2.clone().cross(ortho).normalize();
@@ -689,8 +695,8 @@ async function start() {
 
     window.addEventListener("mousemove", (event) => {
         if (held["MouseRight"]) {
-            camera.rotateOnAxis(DIRECTIONS_3D.RIGHT, event.movementY * -0.005);
-            camera.rotateOnWorldAxis(DIRECTIONS_3D.UP, event.movementX * -0.005);
+            camera.rotateOnAxis(Ortho3D.RIGHT.vector, event.movementY * -0.005);
+            camera.rotateOnWorldAxis(Ortho3D.UP.vector, event.movementX * -0.005);
         }
 
         if (document.pointerLockElement) {
@@ -707,7 +713,7 @@ async function start() {
     });
 
     function stepLayer(sign) {
-        const delta = gridOrtho.clone().multiplyScalar(sign);
+        const delta = gridOrtho.vector.clone().multiplyScalar(sign);
         focus.add(delta);
         setGrid(focus, gridOrtho);
         camera.position.add(delta);
@@ -780,7 +786,7 @@ function getCubeOrtho(ray, position) {
     const box = new THREE.Box3().expandByPoint(position).expandByScalar(.5);
     const point = ray.intersectBox(box, new THREE.Vector3())?.sub(position);
 
-    if (!point) return orthoNormals[0];
+    if (!point) return Ortho3D.UP;
 
-    return getNearestOrtho(point);
+    return Ortho3D.fromNormal(point.normalize());
 }

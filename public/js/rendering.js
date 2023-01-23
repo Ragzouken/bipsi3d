@@ -8,16 +8,20 @@ class BlocksMaterial extends THREE.MeshLambertMaterial {
     constructor(texture, designs) {
         super({ 
             side: THREE.DoubleSide, 
-            alphaTest: .5, 
+            alphaTest: .5,
             map: texture,
             fog: true,
         });
 
-        this.onBeforeCompile = function (shader) {
+        /**
+         * @param {THREE.Shader} shader
+         * @param {THREE.Renderer} renderer
+         */
+        this.onBeforeCompile = function (shader, renderer) {
             this.uniforms = shader.uniforms;
             blockShapeShaderFixer(shader);
             shader.uniforms.blockDesigns.value = designs;
-        }
+        };
     }
 }
 
@@ -36,6 +40,8 @@ class SpritesMaterial extends THREE.MeshBasicMaterial {
         this.onBeforeCompile = billboardShaderFixer;
     }
 }
+
+const S4_TRANSFORM_LOOKUP = Object.freeze(S4.ALL.map((element) => Object.freeze(new THREE.Matrix3().setFromMatrix4(element.matrix))));
 
 // D4 = symmetry group for rotations+flips of a square
 
