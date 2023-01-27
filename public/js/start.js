@@ -1,3 +1,5 @@
+"use strict";
+
 window.addEventListener("DOMContentLoaded", start);
 
 const UNBOUNDED = new THREE.Box3();
@@ -7,69 +9,7 @@ Object.freeze(UNBOUNDED.min);
 Object.freeze(UNBOUNDED.max);
 Object.freeze(UNBOUNDED);
 
-const designCount = 16;
-
-
-class RoomRendering extends THREE.Object3D {
-    /**
-     * @param {THREE.Texture} texture
-     */
-    constructor(texture) {
-        super();
-
-        this.timer = 0;
-        this.frame = 0;
-
-        const geometries = {
-            cube: makeGeometry(cube),
-            ramp: makeGeometry(ramp),
-            slab: makeGeometry(slab),
-            wedgeBody: makeGeometry(wedgeBody),
-            wedgeHead: makeGeometry(wedgeHead),
-        };
-
-        this.texture = texture;
-        this.tilesetWidth = 256;
-        this.tilesetCols = 16;
-
-        this.designs = new BlockDesignData(8, 4, designCount);
-        for (let i = 0; i < designCount; ++i) this.designs.setDesignAt(i, boxDesign(THREE.MathUtils.randInt(1, 16*16-1), THREE.MathUtils.randInt(1, 16*16-1)));
-
-        this.designs.setDesignAt(0, boxDesign(1, 2));
-        this.designs.setDesignAt(1, boxDesign(3, 4));
-        this.designs.setDesignAt(2, boxDesign(5, 6));
-        this.designs.setDesignAt(3, boxDesign(7, 8));
-
-        this.blockMaterial = new BlocksMaterial(this.texture, this.designs);
-        this.spriteMaterial = new SpritesMaterial(this.texture);
-
-        this.blockMap = new BlockMap(geometries, this.blockMaterial);
-        this.billboards = new BillboardInstances(new THREE.PlaneGeometry(1, 1), this.spriteMaterial, 4096);
-
-        this.add(this.blockMap);
-        this.add(this.billboards);
-
-        this.bounds = new THREE.Box3().copy(UNBOUNDED);
-    }
-
-    update() {
-        if (this.blockMaterial.uniforms) {
-            this.blockMaterial.uniforms.tilesetWidth.value = this.tilesetWidth;
-            this.blockMaterial.uniforms.tilesetWidthInv.value = 1/this.tilesetWidth;
-            this.blockMaterial.uniforms.tilesetCols.value = this.tilesetCols;
-            this.blockMaterial.uniforms.tilesetColsInv.value = 1/this.tilesetCols;
-
-            this.blockMaterial.uniforms.frame.value = this.frame;
-            
-            this.blockMaterial.uniforms.boundMin.value.copy(this.bounds.min);
-            this.blockMaterial.uniforms.boundMax.value.copy(this.bounds.max);
-        }
-
-        if (this.timer == 0) this.frame = (this.frame + 1) % 4;
-        this.timer = (this.timer + 1) % 20;
-        this.billboards.update();
-    }
-}
+const INPUT = new Input();
 
 async function start() {
     const clock = new THREE.Clock();
@@ -79,24 +19,13 @@ async function start() {
     const renderer = new THREE.WebGLRenderer({ alpha: true });
     document.getElementById("room-render").appendChild(renderer.domElement);
 
-    //
+    INPUT.element = renderer.domElement;
 
     const editState = {
         layerMode: true,
         gridVertical: false,
         looking: false,
     };
-
-    // input
-    let held = {};
-    let pressed = {};
-    let released = {};
-
-    const mouseButtons = {
-        0: "MouseLeft",
-        1: "MouseMiddle",
-        2: "MouseRight",
-    }
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -110,18 +39,6 @@ async function start() {
 
         return norm;
     }
-
-    window.addEventListener("pointerdown", (event) => {
-        const button = mouseButtons[event.button] ?? "MouseUnknown";
-        pressed[button] = true;
-        held[button] = true;
-    });
-
-    window.addEventListener("pointerup", (event) => {
-        const button = mouseButtons[event.button] ?? "MouseUnknown";
-        released[button] = true;
-        held[button] = false;
-    });
 
     // camera
     const scene = new THREE.Scene();
@@ -244,11 +161,11 @@ async function start() {
 
     let baseRotation = S4.IDENTITY;
 
-    ALL(`input[name="shape"]`).forEach((input) => {
-        input.addEventListener("change", (event) => {
-            if (input.checked) type = input.value;
-        });
-    });
+    const selectShape = ui.radio("shape");
+    selectShape.addEventListener("change", () => type = selectShape.value);
+
+    const selectDesign = ui.radio("design");
+    selectDesign.addEventListener("change", () => design = selectDesign.valueAsNumber);
 
     function getRotationOffset() {
         const cameraForward = camera.getWorldDirection(new THREE.Vector3());
@@ -316,11 +233,39 @@ async function start() {
         object.position.add(point);
     }
 
+    function rotateBlock(position, ortho, steps) {
+        const block = level.blockMap.getBlockAt(position);
+
+        if (block) {
+            const rotation = S4.fromIndex(block.rotation).rotated(ortho, steps);
+            level.blockMap.setBlockAt(position, block.type, rotation.index, block.design);
+            setBaseRotation(rotation);
+        }
+
+        return block !== undefined;
+    }
+
+    const gridMode = ui.toggle("grid-mode");
+    const gridRaise = ui.action("grid-raise", () => stepLayer(-1));
+    const gridLower = ui.action("grid-lower", () => stepLayer(1));
+
+    gridMode.checked = true;
+    editState.layerMode = gridMode.checked;
+
+    function stepLayer(sign) {
+        const delta = gridOrtho.vector.clone().multiplyScalar(sign);
+        focus.add(delta);
+        setGrid(focus, gridOrtho);
+        camera.position.add(delta);
+    }
+
     level.bounds.max.y = 4;
     function animate(dt) {
-        if (pressed["l"]) {
-            editState.layerMode = !editState.layerMode;
+        if (INPUT.pressed.has("l")) {
+            gridMode.checked = !gridMode.checked;
         }
+
+        editState.layerMode = gridMode.checked;
 
         let undoPreview = () => {};
 
@@ -347,8 +292,8 @@ async function start() {
             gridOrtho = getGridOrtho();
         }
 
-        if (pressed["="]) stepLayer(1);
-        if (pressed["-"]) stepLayer(-1);
+        if (INPUT.pressed.has("=")) gridRaise.invoke();
+        if (INPUT.pressed.has("-")) gridLower.invoke();
 
         level.bounds.copy(UNBOUNDED);
 
@@ -366,16 +311,16 @@ async function start() {
         scene.fog.near = 8;
         scene.fog.far = 8 + 16;
 
-        if (pressed["1"]) type = types[0];
-        if (pressed["2"]) type = types[1];
-        if (pressed["3"]) type = types[2];
-        if (pressed["4"]) type = types[3];
-        if (pressed["5"]) type = types[4];
+        if (INPUT.pressed.has("1")) selectShape.selectedIndex = 0;
+        if (INPUT.pressed.has("2")) selectShape.selectedIndex = 1;
+        if (INPUT.pressed.has("3")) selectShape.selectedIndex = 2;
+        if (INPUT.pressed.has("4")) selectShape.selectedIndex = 3;
+        if (INPUT.pressed.has("5")) selectShape.selectedIndex = 4;
 
-        if (pressed["7"]) design = 0;
-        if (pressed["8"]) design = 1;
-        if (pressed["9"]) design = 2;
-        if (pressed["0"]) design = 3;
+        if (INPUT.pressed.has("7")) selectDesign.selectedIndex = 0;
+        if (INPUT.pressed.has("8")) selectDesign.selectedIndex = 1;
+        if (INPUT.pressed.has("9")) selectDesign.selectedIndex = 2;
+        if (INPUT.pressed.has("0")) selectDesign.selectedIndex = 3;
 
         if (editState.looking) {
             renderer.domElement.requestPointerLock();
@@ -383,7 +328,7 @@ async function start() {
             document.exitPointerLock();
         }
 
-        if (held["MouseMiddle"] && dragInfo.focus) {;
+        if (INPUT.held.has("MouseMiddle") && dragInfo.focus) {;
             const delta = pointer.clone().sub(dragInfo.mouse);
 
             camera.matrixAutoUpdate = false;
@@ -400,10 +345,11 @@ async function start() {
             dragInfo.focus = undefined;
         }
 
-        const pick = held["Alt"];
-        const del = !pick && held["Control"];
+        const pick = INPUT.held.has("Alt");
+        const del = !pick && INPUT.held.has("Control");
         const put = !pick && !del;
-        const click = pressed["MouseLeft"];
+
+        ONE("#layer-controls").hidden = !editState.layerMode;
 
         if (editState.layerMode) {
             plane.setFromNormalAndCoplanarPoint(gridOrtho.vector, grid.position.clone().addScaledVector(gridOrtho.vector, -gridAdjust));
@@ -440,7 +386,7 @@ async function start() {
                     if (o.z === 0) grid.position.z = cursor.position.z;
                 }
 
-                if (pressed["g"]) {
+                if (INPUT.pressed.has("g")) {
                     focus.copy(cursor.position);
                 }
 
@@ -449,41 +395,29 @@ async function start() {
                 scene.fog.near = d;
                 scene.fog.far = d + 16;
 
-                if (pressed["MouseMiddle"] && !dragInfo.focus) {
+                if (INPUT.pressed.has("MouseMiddle") && !dragInfo.focus) {
                     dragInfo.focus = point.clone().round();
                     dragInfo.mouse = pointer.clone();
                     dragInfo.camera2 = camera.matrix.clone();
                     dragInfo.norm = 1 - Math.abs(getNormalisePointer().x);
                 }
 
-                const orthoIndex = gridOrtho.index;
-
-                if (pressed["q"]) {
-                    const block = level.blockMap.getBlockAt(cursor.position);
-                    if (block) {
-                        const rotation = S4.fromIndex(block.rotation).rotated(gridOrtho, 1);
-                        level.blockMap.setBlockAt(cursor.position, block.type, rotation.index, block.design);
-                        setBaseRotation(rotation);
-                    } else {
-                        const rotation = getRelativeRotation().rotated(gridOrtho.index, 1);
+                if (INPUT.pressed.has("q")) {
+                    if (!rotateBlock(cursor.position, gridOrtho, -1)) {
+                        const rotation = getRelativeRotation().rotated(gridOrtho, -1);
                         setBaseRotation(rotation);
                     }
                 }
     
-                if (pressed["e"]) {
-                    const block = level.blockMap.getBlockAt(cursor.position);
-                    if (block) {
-                        const rotation = S4.fromIndex(block.rotation).rotated(gridOrtho, -1);
-                        level.blockMap.setBlockAt(cursor.position, block.type, rotation.index, block.design);
-                        setBaseRotation(rotation);
-                    } else {
-                        const rotation = getRelativeRotation().rotated(gridOrtho, -1);
+                if (INPUT.pressed.has("e")) {
+                    if (!rotateBlock(cursor.position, gridOrtho, 1)) {
+                        const rotation = getRelativeRotation().rotated(gridOrtho, 1);
                         setBaseRotation(rotation);
                     }
                 }
             }
 
-            if (pressed["g"]) {
+            if (INPUT.pressed.has("g")) {
                 editState.gridVertical = !editState.gridVertical; 
                 setGrid(focus, editState.gridVertical ? Ortho3D.LEFT : Ortho3D.UP);
             }
@@ -494,7 +428,7 @@ async function start() {
                 const pos = cursor.position;
                 const prev = level.blockMap.getBlockAt(pos);
                 level.blockMap.setBlockAt(cursor.position, type, rotation.index, design);
-                if (held["MouseLeft"]) {
+                if (INPUT.held.has("MouseLeft")) {
                     focus.copy(cursor.position);
                 } else if (prev) {
                     undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
@@ -505,18 +439,18 @@ async function start() {
                 delNub.visible = true;
                 nub.visible = false;
 
-                if (held["MouseLeft"]) {
+                if (INPUT.pressed.has("MouseLeft")) {
                     level.blockMap.delBlockAt(cursor.position);
                 }
             } else if (cursor.visible && pick) {
                 pickNub.visible = true;
                 nub.visible = false;
 
-                if (held["MouseLeft"]) {
+                if (INPUT.held.has("MouseLeft")) {
                     const block = level.blockMap.getBlockAt(cursor.position);
 
                     if (block) {
-                        setBaseRotation(block.rotation);
+                        setBaseRotation(S4.fromIndex(block.rotation));
                         design = block.design;
                         type = block.type;
                     }
@@ -552,7 +486,7 @@ async function start() {
                     const pos = cursor.position.clone().add(cubeOrtho.vector);
                     const prev = level.blockMap.getBlockAt(pos);
 
-                    if (pressed["MouseLeft"]) {
+                    if (INPUT.pressed.has("MouseLeft")) {
                         level.blockMap.setBlockAt(pos, type, rotation.index, design);
                     } else if (prev) {
                         //undoPreview = () => level.blockMap.setBlockAt(pos, prev.type, prev.rotation, prev.design);
@@ -563,14 +497,14 @@ async function start() {
                     delNub.visible = true;
                     nub.visible = false;
     
-                    if (pressed["MouseLeft"]) {
+                    if (INPUT.pressed.has("MouseLeft")) {
                         level.blockMap.delBlockAt(cursor.position);
                     }
                 } else if (cursor.visible && pick) {
                     pickNub.visible = true;
                     nub.visible = false;
     
-                    if (pressed["MouseLeft"]) {
+                    if (INPUT.pressed.has("MouseLeft")) {
                         const block = level.blockMap.getBlockAt(cursor.position);
     
                         if (block) {
@@ -581,52 +515,36 @@ async function start() {
                     }
                 }
 
-                if (pressed["MouseMiddle"] && !dragInfo.focus) {
+                if (INPUT.pressed.has("MouseMiddle") && !dragInfo.focus) {
                     dragInfo.focus = cursor.position.clone().round();
                     dragInfo.mouse = pointer.clone();
                     dragInfo.camera2 = camera.matrix.clone();
                 }
 
-                if (pressed["q"]) {
-                    const block = level.blockMap.getBlockAt(position);
-                    const rotation = S4.fromIndex(block.rotation).rotated(cubeOrtho, 1);
-                    level.blockMap.setBlockAt(position, block.type, rotation.index, block.design);
-                    setBaseRotation(rotation);
+                if (INPUT.pressed.has("q")) {
+                    rotateBlock(position, cubeOrtho, 1);
                 }
 
-                if (pressed["e"]) {
-                    const block = level.blockMap.getBlockAt(position);
-                    const rotation = S4.fromIndex(block.rotation).rotated(cubeOrtho, -1);
-                    level.blockMap.setBlockAt(position, block.type, rotation.index, block.design);
-                    setBaseRotation(rotation);
+                if (INPUT.pressed.has("e")) {
+                    rotateBlock(position, cubeOrtho, -1);
                 }
             }
         }
 
-        editState.looking = held["MouseRight"] || held["MouseMiddle"];
-
-        if (pressed["o"]) {
-            camera.lookAt(camera.position.clone().set(0, 0, 0));
+        if (INPUT.hovered !== renderer.domElement) {
+            cursor.visible = false;
+            undoPreview();
+            undoPreview = () => {};
         }
 
-        //if (held["MouseRight"]) {
-            if (held["w"]) camera.position.addScaledVector(cameraForward, dt * 7);
-            if (held["s"]) camera.position.addScaledVector(cameraForward, dt * -7);
-            if (held["a"]) camera.position.addScaledVector(cameraRight, dt * -7);
-            if (held["d"]) camera.position.addScaledVector(cameraRight, dt *  7);
-            if (held[" "]) camera.position.addScaledVector(Ortho3D.UP.vector, dt *  7);
-            if (held["Shift"]) camera.position.addScaledVector(Ortho3D.UP.vector, dt *  -7);
-        //} else if (editState.layerMode) {
-            // const right2 = ortho.clone().cross(forward).normalize();
-            // const forward2 = right2.clone().cross(ortho).normalize();
+        editState.looking = INPUT.held.has("MouseRight") || INPUT.held.has("MouseMiddle");
 
-            // if (held["w"]) camera.position.addScaledVector(forward2, dt * 7);
-            // if (held["s"]) camera.position.addScaledVector(forward2, dt * -7);
-            // if (held["a"]) camera.position.addScaledVector(right2, dt * -7);
-            // if (held["d"]) camera.position.addScaledVector(right2, dt *  7);
-            // if (held[" "]) camera.position.addScaledVector(ortho, dt *  7);
-            // if (held["Shift"]) camera.position.addScaledVector(ortho, dt *  -7);
-        //}
+        if (INPUT.held.has("w")) camera.position.addScaledVector(cameraForward, dt * 7);
+        if (INPUT.held.has("s")) camera.position.addScaledVector(cameraForward, dt * -7);
+        if (INPUT.held.has("a")) camera.position.addScaledVector(cameraRight, dt * -7);
+        if (INPUT.held.has("d")) camera.position.addScaledVector(cameraRight, dt *  7);
+        if (INPUT.held.has(" ")) camera.position.addScaledVector(Ortho3D.UP.vector, dt *  7);
+        if (INPUT.held.has("Shift")) camera.position.addScaledVector(Ortho3D.UP.vector, dt *  -7);
 
         renderer.autoClear = false;
 
@@ -644,12 +562,12 @@ async function start() {
         if (editState.layerMode) renderer.render(compMesh, compCamera);
 
         stats.update();
-        pressed = {};
-        released = {};
+
+        INPUT.step();
 
         undoPreview();
 
-        ONE(`input[name="shape"][value="${type}"]`).click();
+        selectShape.setValueSilent(type);
     };
 
     function update() {
@@ -660,41 +578,8 @@ async function start() {
 
     requestAnimationFrame(update);
 
-    window.addEventListener("keydown", (event) => {
-        // if (isElementTextInput(event.target)) return;
-
-        held[event.key] = true;
-        pressed[event.key] = true;
-
-        held[event.key.toLowerCase()] = true;
-        pressed[event.key.toLowerCase()] = true;
-
-        if (event.key.includes("Arrow")) event.preventDefault();
-
-        if (event.key.includes("Control")) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
-    });
-
-    window.addEventListener("keyup", (event) => {
-        released[event.key] = true;
-        released[event.key.toLowerCase()] = true;
-        held[event.key] = false;
-        held[event.key.toLowerCase()] = false;
-
-        if (event.key.includes("Alt")) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
-    });
-
-    function clearHeld() {
-        held = {};
-    }
-
     window.addEventListener("mousemove", (event) => {
-        if (held["MouseRight"]) {
+        if (INPUT.held.has("MouseRight")) {
             camera.rotateOnAxis(Ortho3D.RIGHT.vector, event.movementY * -0.005);
             camera.rotateOnWorldAxis(Ortho3D.UP.vector, event.movementX * -0.005);
         }
@@ -712,27 +597,13 @@ async function start() {
         event.stopPropagation();
     });
 
-    function stepLayer(sign) {
-        const delta = gridOrtho.vector.clone().multiplyScalar(sign);
-        focus.add(delta);
-        setGrid(focus, gridOrtho);
-        camera.position.add(delta);
-    }
-
     renderer.domElement.addEventListener("wheel", (event) => {
         // if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-            if (!held["MouseMiddle"]) stepLayer(Math.sign(event.deltaY));
+            if (!INPUT.held.has("MouseMiddle")) stepLayer(Math.sign(event.deltaY));
 
             event.preventDefault();
             event.stopPropagation();
         // }
-    });
-
-    window.addEventListener("contextmenu", clearHeld);
-    window.addEventListener("blur", clearHeld);
-
-    ONE("#info").addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
     });
 }
 
@@ -789,4 +660,68 @@ function getCubeOrtho(ray, position) {
     if (!point) return Ortho3D.UP;
 
     return Ortho3D.fromNormal(point.normalize());
+}
+
+const designCount = 16;
+
+
+class RoomRendering extends THREE.Object3D {
+    /**
+     * @param {THREE.Texture} texture
+     */
+    constructor(texture) {
+        super();
+
+        this.timer = 0;
+        this.frame = 0;
+
+        const geometries = {
+            cube: makeGeometry(cube),
+            ramp: makeGeometry(ramp),
+            slab: makeGeometry(slab),
+            wedgeBody: makeGeometry(wedgeBody),
+            wedgeHead: makeGeometry(wedgeHead),
+        };
+
+        this.texture = texture;
+        this.tilesetWidth = 256;
+        this.tilesetCols = 16;
+
+        this.designs = new BlockDesignData(8, 4, designCount);
+        for (let i = 0; i < designCount; ++i) this.designs.setDesignAt(i, boxDesign(THREE.MathUtils.randInt(1, 16*16-1), THREE.MathUtils.randInt(1, 16*16-1)));
+
+        this.designs.setDesignAt(0, boxDesign(1, 2));
+        this.designs.setDesignAt(1, boxDesign(3, 4));
+        this.designs.setDesignAt(2, boxDesign(5, 6));
+        this.designs.setDesignAt(3, boxDesign(7, 8));
+
+        this.blockMaterial = new BlocksMaterial(this.texture, this.designs);
+        this.spriteMaterial = new SpritesMaterial(this.texture);
+
+        this.blockMap = new BlockMap(geometries, this.blockMaterial);
+        this.billboards = new BillboardInstances(new THREE.PlaneGeometry(1, 1), this.spriteMaterial, 4096);
+
+        this.add(this.blockMap);
+        this.add(this.billboards);
+
+        this.bounds = new THREE.Box3().copy(UNBOUNDED);
+    }
+
+    update() {
+        if (this.blockMaterial.uniforms) {
+            this.blockMaterial.uniforms.tilesetWidth.value = this.tilesetWidth;
+            this.blockMaterial.uniforms.tilesetWidthInv.value = 1/this.tilesetWidth;
+            this.blockMaterial.uniforms.tilesetCols.value = this.tilesetCols;
+            this.blockMaterial.uniforms.tilesetColsInv.value = 1/this.tilesetCols;
+
+            this.blockMaterial.uniforms.frame.value = this.frame;
+            
+            this.blockMaterial.uniforms.boundMin.value.copy(this.bounds.min);
+            this.blockMaterial.uniforms.boundMax.value.copy(this.bounds.max);
+        }
+
+        if (this.timer == 0) this.frame = (this.frame + 1) % 4;
+        this.timer = (this.timer + 1) % 20;
+        this.billboards.update();
+    }
 }

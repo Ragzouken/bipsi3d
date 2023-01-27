@@ -205,9 +205,7 @@ function maxBy(values, metric) {
 
     Object.freeze(AXIS_TURN_LOOKUP);
     S4.AXIS_TURN_LOOKUP = AXIS_TURN_LOOKUP;
-}
 
-{
     Ortho3D.ALL.forEach((ortho) => ortho.s4 = S4.ALL.find((s) => s.ortho === ortho));
     Ortho3D.ALL.forEach(Object.freeze);
 }

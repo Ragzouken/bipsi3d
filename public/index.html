@@ -8,6 +8,7 @@
   <script src="./library/stats.min.js"></script>
   <script src="./library/peggy.min.js"></script>
 
+  <script src="./js/input.js"></script>
   <script src="./js/orientations.js"></script>
   <script src="./js/utility.js"></script>
   <script src="./js/blocks.js"></script>
@@ -41,49 +42,83 @@
       cursor: pointer;
     }
 
-    #info {
+    #controls {
       position: absolute;
-      top: 0;
-      right: 0;
+      top: 0; right: 0;
       margin: 32px;
+
+      display: flex;
+      flex-direction: column;
+      gap: 32px; 
+
+      font-size: 16px;
+    }
+
+    #controls > div {
       background: black;
       color: white;
       padding: 16px;
-      padding-right: 32px;
       font-family: monospace;
-      font-size: 16px;
+
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #block-controls > div {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+
+    #info {
+      padding-right: 32px;
+    }
+
+    h2 { 
+      margin: 0;
     }
   </style>
 </head>
 
 <body>
   <main>
-    <div id="info">
-      <ul>
-        <li>look: right-click + drag</li>
-        <li>fly: WASD/shift/space</li>
-        <li>orbit: middle-click + drag</li>
-        <li>place cube: left click</li>
-        <li>remove cube: ctrl + left click</li>
-        <li>rotate cube: hover + q/e</li>
-        <li>change block design: 7/8/9/0</li>
-        <li>toggle free place / grid: l</li>
-        <li>toggle grid orientation: g</li>
-        <li>push/pull layer: mousewheel and +/-</li>
-      </ul>
-      <div>
-        <label>1<input type="radio" name="shape" value="cube"><img src="assets/cube.png"></label>
-        <label>2<input type="radio" name="shape" value="ramp"><img src="assets/ramp.png"></label>
-        <label>3<input type="radio" name="shape" value="slab"><img src="assets/slab.png"></label>
-        <label>4<input type="radio" name="shape" value="wedgeBody"><img src="assets/wedge-b.png"></label>
-        <label>5<input type="radio" name="shape" value="wedgeHead"><img src="assets/wedge-h.png"></label>
+    <div id="controls">
+      <div id="block-controls">
+        choose block (1/2/3/4/5)
+        <div>
+          <label><input type="radio" name="shape" value="cube"><img src="assets/cube.png"></label>
+          <label><input type="radio" name="shape" value="ramp"><img src="assets/ramp.png"></label>
+          <label><input type="radio" name="shape" value="slab"><img src="assets/slab.png"></label>
+          <label><input type="radio" name="shape" value="wedgeBody"><img src="assets/wedge-b.png"></label>
+          <label><input type="radio" name="shape" value="wedgeHead"><img src="assets/wedge-h.png"></label>
+        </div>
+        choose design (7/8/9/0)
+        <div>
+          <label>7<input type="radio" name="design" value="0"></label>
+          <label>8<input type="radio" name="design" value="1"></label>
+          <label>9<input type="radio" name="design" value="2"></label>
+          <label>0<input type="radio" name="design" value="3"></label>
+        </div>
       </div>
-      <!-- <div>
-        <label>7<input type="radio" name="design" value="0"></label>
-        <label>8<input type="radio" name="design" value="1"></label>
-        <label>9<input type="radio" name="design" value="2"></label>
-        <label>0<input type="radio" name="design" value="3"></label>
-      </div> -->
+      <div>
+        <label><input type="checkbox" name="grid-mode">grid mode (l)</label>
+        <div id="layer-controls">
+          <button name="grid-raise">raise grid (+)</button>
+          <button name="grid-lower">lower grid (-)</button>
+        </div>
+      </div>
+      <div id="info">
+        <ul>
+          <li>look: right-click + drag</li>
+          <li>fly: WASD/shift/space</li>
+          <li>orbit: middle-click + drag</li>
+          <li>place cube: left click</li>
+          <li>remove cube: ctrl + left click</li>
+          <li>rotate cube: hover + q/e</li>
+          <li>toggle grid orientation: g</li>
+        </ul>
+      </div>
     </div>
     <section id="room-render"></section>
   </main>
